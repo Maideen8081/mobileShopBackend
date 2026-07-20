@@ -35,7 +35,10 @@ class ProductListAPIView(ListAPIView):
         sub_category = self.request.query_params.get('sub_category')
         sub_category_name = self.request.query_params.get('sub_category_name')
         is_trending = self.request.query_params.get('is_trending')
+        is_new_arrival = self.request.query_params.get('is_new_arrival')
+        is_best_selling = self.request.query_params.get('is_best_selling')
         is_featured = self.request.query_params.get('is_featured')
+        is_refurbished = self.request.query_params.get('is_refurbished')
         is_published = self.request.query_params.get('is_published')
         status_param = self.request.query_params.get('status')
 
@@ -55,6 +58,12 @@ class ProductListAPIView(ListAPIView):
             qs = qs.filter(sub_category__sub_category_name__iexact=sub_category_name)
         if is_trending:
             qs = qs.filter(is_trending=True)
+        if is_new_arrival:
+            qs = qs.filter(is_new_arrival=True)
+        if is_best_selling:
+            qs = qs.filter(is_best_selling=True)
+        if is_refurbished:
+            qs = qs.filter(is_refurbished=True)
         if is_featured:
             qs = qs.filter(is_featured=True)
         if is_published is not None:

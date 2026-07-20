@@ -65,7 +65,7 @@ class ProductListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'product_name', 'brand', 'model_number',
             'category', 'category_name', 'sub_category', 'sub_category_name',
-            'common_image', 'is_trending', 'is_new_arrival', 'is_best_selling', 'is_featured', 'is_published',
+            'common_image', 'is_trending', 'is_new_arrival', 'is_best_selling', 'is_featured', 'is_refurbished', 'is_published',
             'variant_count', 'total_stock', 'min_price',
             'created_at', 'updated_at',
         ]
@@ -99,7 +99,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             'id', 'product_name', 'brand', 'model_number',
             'category', 'category_name', 'sub_category', 'sub_category_name',
             'description', 'common_image', 'is_trending', 'is_new_arrival', 'is_best_selling',
-            'is_featured', 'is_published', 'created_at', 'updated_at',
+            'is_featured', 'is_refurbished', 'is_published', 'created_at', 'updated_at',
             'features', 'care_instructions', 'variants',
         ]
 
@@ -117,7 +117,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         fields = [
             'product_name', 'brand', 'model_number', 'category', 'sub_category',
             'description', 'common_image', 'is_trending', 'is_new_arrival', 'is_best_selling',
-            'is_featured', 'is_published', 'features', 'care_instructions', 'variants',
+            'is_featured', 'is_refurbished', 'is_published', 'features', 'care_instructions', 'variants',
         ]
 
     def validate_product_name(self, value):
@@ -240,7 +240,7 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'product_name', 'brand', 'model_number', 'category', 'sub_category',
             'description', 'common_image', 'is_trending', 'is_new_arrival', 'is_best_selling',
-            'is_featured', 'is_published', 'features', 'care_instructions', 'variants',
+            'is_featured', 'is_refurbished', 'is_published', 'features', 'care_instructions', 'variants',
         ]
         extra_kwargs = {f: {'required': False} for f in fields}
 

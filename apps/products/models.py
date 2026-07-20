@@ -14,6 +14,7 @@ class Product(TimeStampedModel):
     is_new_arrival = models.BooleanField(default=False)
     is_best_selling = models.BooleanField(default=False)
     is_featured = models.BooleanField(default=False)
+    is_refurbished = models.BooleanField(default=False)
     is_published = models.BooleanField(default=True)
 
     class Meta:
@@ -25,6 +26,7 @@ class Product(TimeStampedModel):
             models.Index(fields=['is_trending']),
             models.Index(fields=['is_new_arrival']),
             models.Index(fields=['is_best_selling']),
+            models.Index(fields=['is_refurbished']),
             models.Index(fields=['is_published']),
         ]
 
