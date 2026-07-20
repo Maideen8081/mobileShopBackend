@@ -1,4 +1,3 @@
-import razorpay
 from decouple import config
 from django.db import transaction
 from rest_framework import status
@@ -19,7 +18,6 @@ from .serializers import (
     VerifyPaymentSerializer,
 )
 
-client = razorpay.Client(auth=(config('RAZORPAY_KEY_ID'), config('RAZORPAY_SECRET')))
 
 
 class CouponApplyAPIView(GenericAPIView):
