@@ -4,11 +4,10 @@ try:
     import botocore.httpsession as _bs
 
     def _get_r2_ssl_context(self):
-        ctx = _ssl_mod.SSLContext(_ssl_mod.PROTOCOL_TLS)
+        ctx = _ssl_mod.SSLContext(_ssl_mod.PROTOCOL_TLS_CLIENT)
         ctx.check_hostname = False
         ctx.verify_mode = _ssl_mod.CERT_NONE
         ctx.minimum_version = _ssl_mod.TLSVersion.TLSv1_2
-        ctx.maximum_version = _ssl_mod.TLSVersion.TLSv1_2
         ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
         return ctx
 
