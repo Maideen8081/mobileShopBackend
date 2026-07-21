@@ -1,8 +1,6 @@
-import os
-
-os.environ.setdefault("AWS_CA_BUNDLE", "")
-
 from .base import *
+
+INSTALLED_APPS += ['cloudinary', 'cloudinary_storage']
 
 DEBUG = False
 
@@ -66,49 +64,23 @@ LOGGING = {
             'level': 'WARNING',
             'propagate': True,
         },
-        'boto3': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        'botocore': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        'storages': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
     },
 }
 
-# Cloudflare R2 Storage (only if env vars are set)
-R2_BUCKET = config('R2_BUCKET_NAME', default='')
-if R2_BUCKET:
-    STORAGES = {
-        'default': {
-            'BACKEND': 'apps.common.r2_storage.S3Boto3Storage',
-        },
-        'staticfiles': {
-            'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
-        },
-    }
+# Cloudinary Image Storage
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': config('CLOUDINARY_CLOUD_NAME', default=''),
+    'API_KEY': config('CLOUDINARY_API_KEY', default=''),
+    'API_SECRET': config('CLOUDINARY_API_SECRET', default=''),
+}
 
-    R2_PUBLIC_URL = config('R2_PUBLIC_URL', default='').rstrip('/')
-    MEDIA_URL = R2_PUBLIC_URL + '/' if R2_PUBLIC_URL else f'https://{R2_BUCKET}.r2.dev/'
+STORAGES = {
+    'default': {
+        'BACKEND': 'cloudinary_storage.storage.MediaCloudinaryStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
-    AWS_STORAGE_BUCKET_NAME = R2_BUCKET
-    AWS_S3_ENDPOINT_URL = config('R2_ENDPOINT_URL', default='')
-    AWS_S3_CUSTOM_DOMAIN = R2_PUBLIC_URL.replace('https://', '') if R2_PUBLIC_URL else f'{R2_BUCKET}.r2.dev'
-    AWS_ACCESS_KEY_ID = config('R2_ACCESS_KEY_ID', default='')
-    AWS_SECRET_ACCESS_KEY = config('R2_SECRET_ACCESS_KEY', default='')
-    AWS_S3_SIGNATURE_VERSION = 's3v4'
-    AWS_S3_VERIFY = False
-    AWS_QUERYSTRING_AUTH = False
-    AWS_S3_FILE_OVERWRITE = False
-    AWS_S3_ADDRESSING_STYLE = 'path'
-    AWS_S3_OBJECT_PARAMETERS = {
-        'CacheControl': 'max-age=86400',
-    }
+MEDIA_URL = f'https://res.cloudinary.com/{config("CLOUDINARY_CLOUD_NAME", default="")}/image/upload/'

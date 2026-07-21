@@ -1,6 +1,7 @@
 import logging
 
 from django.contrib import admin, messages
+from django.utils.html import format_html
 from .models import Category, SubCategory
 
 logger = logging.getLogger(__name__)
@@ -20,9 +21,8 @@ class CategoryAdmin(admin.ModelAdmin):
 
     def category_image_preview(self, obj):
         if obj.category_image:
-            return '<img src="{}" width="50" height="50" style="object-fit:cover;" />'.format(obj.category_image.url)
+            return format_html('<img src="{}" width="50" height="50" style="object-fit:cover;" />', obj.category_image.url)
         return '-'
-    category_image_preview.allow_tags = True
     category_image_preview.short_description = 'Image'
 
     def save_model(self, request, obj, form, change):

@@ -25,13 +25,9 @@ services:
         sync: false
       - key: DB_PORT
         value: "5432"
-      - key: R2_BUCKET_NAME
+      - key: CLOUDINARY_CLOUD_NAME
         sync: false
-      - key: R2_ENDPOINT_URL
+      - key: CLOUDINARY_API_KEY
         sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
-      - key: R2_PUBLIC_URL
+      - key: CLOUDINARY_API_SECRET
         sync: false

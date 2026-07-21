@@ -1,4 +1,5 @@
 from decouple import config
+import razorpay
 from django.db import transaction
 from rest_framework import status
 from rest_framework.generics import GenericAPIView, ListAPIView, RetrieveAPIView
@@ -108,6 +109,8 @@ class CreateRazorpayOrderAPIView(GenericAPIView):
             grand_total = 0
 
         amount_in_paise = int(grand_total * 100)
+
+        client = razorpay.Client(auth=(config('RAZORPAY_KEY_ID'), config('RAZORPAY_SECRET')))
 
         try:
             razorpay_order = client.order.create({
