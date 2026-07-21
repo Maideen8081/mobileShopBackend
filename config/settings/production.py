@@ -28,24 +28,28 @@ X_FRAME_OPTIONS = "DENY"
 SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"] = timedelta(minutes=15)
 SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"] = timedelta(days=7)
 
-# Cloudflare R2 Storage Configuration (S3-compatible)
-STORAGES = {
-    'default': {
-        'BACKEND': 'storages.backends.s3boto3.S3Boto3Storage',
-    },
-    'staticfiles': {
-        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
-    },
-}
+# Cloudflare R2 Storage (only if env vars are set)
+R2_BUCKET = config('R2_BUCKET_NAME', default='')
+if R2_BUCKET:
+    STORAGES = {
+        'default': {
+            'BACKEND': 'storages.backends.s3boto3.S3Boto3Storage',
+        },
+        'staticfiles': {
+            'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        },
+    }
 
-AWS_STORAGE_BUCKET_NAME = config('R2_BUCKET_NAME', default='')
-AWS_S3_ENDPOINT_URL = config('R2_ENDPOINT_URL', default='')
-AWS_ACCESS_KEY_ID = config('R2_ACCESS_KEY_ID', default='')
-AWS_SECRET_ACCESS_KEY = config('R2_SECRET_ACCESS_KEY', default='')
-AWS_S3_REGION_NAME = 'auto'
-AWS_DEFAULT_ACL = 'public-read'
-AWS_S3_OBJECT_PARAMETERS = {
-    'CacheControl': 'max-age=86400',
-}
-AWS_QUERYSTRING_AUTH = False
-AWS_S3_FILE_OVERWRITE = False
+    AWS_STORAGE_BUCKET_NAME = R2_BUCKET
+    AWS_S3_ENDPOINT_URL = config('R2_ENDPOINT_URL', default='')
+    AWS_ACCESS_KEY_ID = config('R2_ACCESS_KEY_ID', default='')
+    AWS_SECRET_ACCESS_KEY = config('R2_SECRET_ACCESS_KEY', default='')
+    AWS_S3_REGION_NAME = 'auto'
+    AWS_S3_SIGNATURE_VERSION = 's3v4'
+    AWS_DEFAULT_ACL = 'public-read'
+    AWS_QUERYSTRING_AUTH = False
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_S3_ADDRESSING_STYLE = 'path'
+    AWS_S3_OBJECT_PARAMETERS = {
+        'CacheControl': 'max-age=86400',
+    }

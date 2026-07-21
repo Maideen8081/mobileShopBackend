@@ -7,8 +7,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-      - key: DJANGO_SETTINGS_MODULE
-        value: config.settings.production
+      - key: DJANGO_ENV
+        value: production
       - key: SECRET_KEY
         generateValue: true
       - key: DB_NAME
@@ -31,6 +31,10 @@ services:
         fromDatabase:
           name: mobileshopdb
           property: port
+      - key: ALLOWED_HOSTS
+        value: mobile-shop-backend.onrender.com,.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://mobile-shop-frontend-delta.vercel.app
       - key: R2_BUCKET_NAME
         sync: false
       - key: R2_ENDPOINT_URL
@@ -39,8 +43,6 @@ services:
         sync: false
       - key: R2_SECRET_ACCESS_KEY
         sync: false
-      - key: ALLOWED_HOSTS
-        value: mobile-shop-backend.onrender.com,.onrender.com
 
 databases:
   - name: mobileshopdb

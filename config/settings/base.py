@@ -109,38 +109,17 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 STORAGES = {
     "default": {
-        "BACKEND": "storages.backends.s3.S3Storage",
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
 
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 STATICFILES_DIRS = [BASE_DIR / 'static']
-
-MEDIA_URL = config("R2_PUBLIC_URL").rstrip("/") + "/"
-
-AWS_S3_CUSTOM_DOMAIN = config("R2_PUBLIC_URL").replace("https://", "")
-AWS_S3_USE_SSL = True
-
-AWS_ACCESS_KEY_ID = config("R2_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = config("R2_SECRET_ACCESS_KEY")
-AWS_STORAGE_BUCKET_NAME = config("R2_BUCKET_NAME")
-AWS_S3_ENDPOINT_URL = config("R2_ENDPOINT_URL")
-
-AWS_S3_REGION_NAME = "auto"
-AWS_S3_SIGNATURE_VERSION = "s3v4"
-AWS_DEFAULT_ACL = None
-AWS_QUERYSTRING_AUTH = False
-AWS_S3_FILE_OVERWRITE = False
-
-AWS_S3_ADDRESSING_STYLE = "path"
-AWS_S3_VERIFY = True
-
-AWS_S3_OBJECT_PARAMETERS = {
-    "CacheControl": "max-age=86400",
-}
-AWS_S3_URL_PROTOCOL = "https:"
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
