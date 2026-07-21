@@ -83,4 +83,4 @@ STORAGES = {
     },
 }
 
-MEDIA_URL = f'https://res.cloudinary.com/{config("CLOUDINARY_CLOUD_NAME", default="")}/image/upload/'
+MEDIA_URL = ''
