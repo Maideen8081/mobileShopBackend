@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.urls import path, include, re_path
+from django.urls import path, include
 from django.http import HttpResponseRedirect
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -8,9 +8,18 @@ from rest_framework_simplejwt.views import (
 from django.conf import settings
 from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+import traceback
+import logging
+
+logger = logging.getLogger(__name__)
 
 def api_root(request):
     return HttpResponseRedirect('/api/v1/')
+
+def custom_500(request, exception=None):
+    logger.error('500 Error: %s', traceback.format_exc())
+    from django.http import HttpResponseServerError
+    return HttpResponseServerError('Internal Server Error')
 
 api_urlpatterns = [
     path('products/', include('apps.products.urls')),
@@ -33,6 +42,8 @@ urlpatterns = [
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
+
+handler500 = 'config.urls.custom_500'
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
