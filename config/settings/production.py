@@ -3,23 +3,16 @@ import ssl as _ssl_mod
 try:
     import botocore.httpsession as _bs
 
-    _orig = _bs.create_urllib3_context
-
-    def _r2_compat_ctx(
-        ssl_version=None, cert_reqs=None, options=None, ciphers=None
-    ):
-        ctx = _orig(
-            ssl_version=ssl_version,
-            cert_reqs=cert_reqs,
-            options=options,
-            ciphers=ciphers,
-        )
+    def _get_r2_ssl_context(self):
+        ctx = _ssl_mod.SSLContext(_ssl_mod.PROTOCOL_TLS)
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl_mod.CERT_NONE
         ctx.minimum_version = _ssl_mod.TLSVersion.TLSv1_2
         ctx.maximum_version = _ssl_mod.TLSVersion.TLSv1_2
         ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
         return ctx
 
-    _bs.create_urllib3_context = _r2_compat_ctx
+    _bs.URLLib3Session._get_ssl_context = _get_r2_ssl_context
 except ImportError:
     pass
 
