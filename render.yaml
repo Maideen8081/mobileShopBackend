@@ -2,19 +2,19 @@ services:
   - type: web
     name: mobileshopbackend
     runtime: python
-    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --no-input --settings=config.settings.production
+    buildCommand: pip install -r requirements.txt
     startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.0"
-      - key: DJANGO_ENV
-        value: production
-      - key: ALLOWED_HOSTS
-        value: mobile-shop-backend.onrender.com,.onrender.com
-      - key: CORS_ALLOWED_ORIGINS
-        value: https://mobile-shop-frontend-delta.vercel.app
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
       - key: SECRET_KEY
         sync: false
+      - key: DEBUG
+        value: "false"
+      - key: ALLOWED_HOSTS
+        value: "*"
       - key: DB_NAME
         sync: false
       - key: DB_USER
@@ -25,6 +25,14 @@ services:
         sync: false
       - key: DB_PORT
         value: "5432"
+      - key: CORS_ALLOW_ALL_ORIGINS
+        value: "true"
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: JWT_ACCESS_DAYS
+        value: "1"
+      - key: JWT_REFRESH_DAYS
+        value: "30"
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY
