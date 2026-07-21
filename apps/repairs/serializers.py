@@ -2,11 +2,14 @@ import re
 
 from rest_framework import serializers
 
+from apps.common.serializers import AbsoluteImageField
 from apps.repairs.constants import FIELD_ALIASES
 from apps.repairs.models import RepairNote, RepairTicket, RepairTicketPhoto
 
 
 class RepairTicketPhotoSerializer(serializers.ModelSerializer):
+    image = AbsoluteImageField()
+
     class Meta:
         model = RepairTicketPhoto
         fields = ['id', 'image', 'uploaded_at']

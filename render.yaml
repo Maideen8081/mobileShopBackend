@@ -2,11 +2,11 @@ services:
   - type: web
     name: mobileshopbackend
     runtime: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --no-input --settings=config.settings.production
     startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.0"
       - key: DJANGO_ENV
         value: production
       - key: ALLOWED_HOSTS

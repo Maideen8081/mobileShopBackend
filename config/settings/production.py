@@ -1,3 +1,28 @@
+import ssl as _ssl_mod
+
+try:
+    import botocore.httpsession as _bs
+
+    _orig = _bs.create_urllib3_context
+
+    def _r2_compat_ctx(
+        ssl_version=None, cert_reqs=None, options=None, ciphers=None
+    ):
+        ctx = _orig(
+            ssl_version=ssl_version,
+            cert_reqs=cert_reqs,
+            options=options,
+            ciphers=ciphers,
+        )
+        ctx.minimum_version = _ssl_mod.TLSVersion.TLSv1_2
+        ctx.maximum_version = _ssl_mod.TLSVersion.TLSv1_2
+        ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
+        return ctx
+
+    _bs.create_urllib3_context = _r2_compat_ctx
+except ImportError:
+    pass
+
 from .base import *
 
 DEBUG = False
@@ -85,7 +110,7 @@ R2_BUCKET = config('R2_BUCKET_NAME', default='')
 if R2_BUCKET:
     STORAGES = {
         'default': {
-            'BACKEND': 'storages.backends.s3boto3.S3Boto3Storage',
+            'BACKEND': 'apps.common.r2_storage.S3Boto3Storage',
         },
         'staticfiles': {
             'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
