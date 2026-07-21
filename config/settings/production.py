@@ -11,6 +11,13 @@ ALLOWED_HOSTS = [
 ]
 
 CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in config(
+        "CORS_ALLOWED_ORIGINS",
+        default="https://mobile-shop-frontend-delta.vercel.app"
+    ).split(",")
+]
 
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
