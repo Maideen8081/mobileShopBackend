@@ -1,14 +1,16 @@
+import os
 import ssl as _ssl
+
+os.environ.setdefault("AWS_CA_BUNDLE", "")
 
 import botocore.httpsession
 
 
 def _get_r2_ssl_context(self):
-    ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
+    ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS)
     ctx.check_hostname = False
     ctx.verify_mode = _ssl.CERT_NONE
     ctx.minimum_version = _ssl.TLSVersion.TLSv1_2
-    ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
     return ctx
 
 
