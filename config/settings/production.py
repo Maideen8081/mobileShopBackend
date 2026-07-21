@@ -52,11 +52,11 @@ if R2_BUCKET:
 
     AWS_STORAGE_BUCKET_NAME = R2_BUCKET
     AWS_S3_ENDPOINT_URL = config('R2_ENDPOINT_URL', default='')
+    AWS_S3_CUSTOM_DOMAIN = R2_PUBLIC_URL.replace('https://', '') if R2_PUBLIC_URL else f'{R2_BUCKET}.r2.dev'
     AWS_ACCESS_KEY_ID = config('R2_ACCESS_KEY_ID', default='')
     AWS_SECRET_ACCESS_KEY = config('R2_SECRET_ACCESS_KEY', default='')
     AWS_S3_REGION_NAME = 'auto'
     AWS_S3_SIGNATURE_VERSION = 's3v4'
-    AWS_DEFAULT_ACL = 'public-read'
     AWS_QUERYSTRING_AUTH = False
     AWS_S3_FILE_OVERWRITE = False
     AWS_S3_ADDRESSING_STYLE = 'path'
