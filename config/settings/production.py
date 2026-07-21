@@ -51,16 +51,15 @@ LOGGING = {
             'formatter': 'verbose',
         },
     },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',
+    },
     'loggers': {
         'django': {
             'handlers': ['console'],
             'level': 'WARNING',
             'propagate': True,
-        },
-        'django.server': {
-            'handlers': ['console'],
-            'level': 'WARNING',
-            'propagate': False,
         },
         'boto3': {
             'handlers': ['console'],
@@ -68,11 +67,6 @@ LOGGING = {
             'propagate': False,
         },
         'botocore': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        's3transfer': {
             'handlers': ['console'],
             'level': 'DEBUG',
             'propagate': False,
