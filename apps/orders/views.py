@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.cart.models import Cart, CartItem
+from apps.common.serializers import get_absolute_image_url
 from apps.customers.models import Address
 from apps.products.models import ProductVariant, VariantImage
 from .models import Coupon, Order, OrderItem
@@ -256,9 +257,9 @@ class CreateOrderAPIView(GenericAPIView):
                 main_image = VariantImage.objects.filter(variant=cart_item.variant).first()
             image_url = ''
             if main_image and main_image.image:
-                image_url = request.build_absolute_uri(main_image.image.url)
+                image_url = get_absolute_image_url(main_image.image, request)
             elif cart_item.product.common_image:
-                image_url = request.build_absolute_uri(cart_item.product.common_image.url)
+                image_url = get_absolute_image_url(cart_item.product.common_image, request)
 
             OrderItem.objects.create(
                 order=order,

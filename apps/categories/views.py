@@ -14,6 +14,7 @@ from .serializers import (
     SubCategorySerializer,
 )
 from .services import CategoryService
+from apps.common.serializers import get_absolute_image_url
 
 
 @extend_schema(tags=['Categories'])
@@ -55,7 +56,7 @@ class CategoryCreateAPIView(CreateAPIView):
             'data': {
                 'id': category.id,
                 'category_name': category.category_name,
-                'category_image': request.build_absolute_uri(category.category_image.url) if category.category_image else None,
+                'category_image': get_absolute_image_url(category.category_image, request),
                 'status': category.status,
                 'created_at': category.created_at,
             },
@@ -96,7 +97,7 @@ class CategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
             'data': {
                 'id': category.id,
                 'category_name': category.category_name,
-                'category_image': request.build_absolute_uri(category.category_image.url) if category.category_image else None,
+                'category_image': get_absolute_image_url(category.category_image, request),
                 'status': category.status,
                 'created_at': category.created_at,
             },

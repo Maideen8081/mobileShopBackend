@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Category, SubCategory
 from .validators import validate_category_image
+from apps.common.serializers import AbsoluteImageField
 
 
 class SubCategorySerializer(serializers.ModelSerializer):
@@ -63,6 +64,7 @@ class CategoryUpdateSerializer(serializers.ModelSerializer):
 class CategoryListSerializer(serializers.ModelSerializer):
     sub_category_count = serializers.IntegerField(read_only=True, default=0)
     product_count = serializers.SerializerMethodField()
+    category_image = AbsoluteImageField()
 
     class Meta:
         model = Category
@@ -78,6 +80,7 @@ class CategoryListSerializer(serializers.ModelSerializer):
 class CategoryDetailSerializer(serializers.ModelSerializer):
     sub_category_count = serializers.IntegerField(read_only=True)
     product_count = serializers.SerializerMethodField()
+    category_image = AbsoluteImageField()
 
     class Meta:
         model = Category

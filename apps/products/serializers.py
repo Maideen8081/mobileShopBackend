@@ -2,16 +2,7 @@ import json
 
 from rest_framework import serializers
 from .models import Product, ProductFeature, CareInstruction, ProductVariant, VariantImage
-
-
-class AbsoluteImageField(serializers.ImageField):
-    def to_representation(self, value):
-        if not value:
-            return None
-        request = self.context.get('request')
-        if request:
-            return request.build_absolute_uri(value.url)
-        return value.url
+from apps.common.serializers import AbsoluteImageField
 
 
 class VariantImageSerializer(serializers.ModelSerializer):

@@ -1,16 +1,7 @@
 from rest_framework import serializers
 from apps.products.models import Product, ProductVariant, VariantImage
 from .models import Cart, CartItem
-
-
-class AbsoluteImageField(serializers.ImageField):
-    def to_representation(self, value):
-        if not value:
-            return None
-        request = self.context.get('request')
-        if request:
-            return request.build_absolute_uri(value.url)
-        return value.url
+from apps.common.serializers import AbsoluteImageField, get_absolute_image_url
 
 
 class CartItemSerializer(serializers.ModelSerializer):
@@ -42,15 +33,9 @@ class CartItemSerializer(serializers.ModelSerializer):
         if not main_image:
             main_image = VariantImage.objects.filter(variant=obj.variant).first()
         if main_image and main_image.image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(main_image.image.url)
-            return main_image.image.url
+            return get_absolute_image_url(main_image.image, self.context.get('request'))
         if obj.product.common_image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.product.common_image.url)
-            return obj.product.common_image.url
+            return get_absolute_image_url(obj.product.common_image, self.context.get('request'))
         return None
 
 

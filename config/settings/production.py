@@ -40,6 +40,9 @@ if R2_BUCKET:
         },
     }
 
+    R2_PUBLIC_URL = config('R2_PUBLIC_URL', default='').rstrip('/')
+    MEDIA_URL = R2_PUBLIC_URL + '/' if R2_PUBLIC_URL else f'https://{R2_BUCKET}.r2.dev/'
+
     AWS_STORAGE_BUCKET_NAME = R2_BUCKET
     AWS_S3_ENDPOINT_URL = config('R2_ENDPOINT_URL', default='')
     AWS_ACCESS_KEY_ID = config('R2_ACCESS_KEY_ID', default='')
