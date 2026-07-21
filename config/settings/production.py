@@ -12,7 +12,7 @@ ALLOWED_HOSTS = [
     ).split(",")
 ]
 
-CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL_ORIGINS', default=False, cast=bool)
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in config(
