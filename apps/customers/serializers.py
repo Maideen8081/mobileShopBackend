@@ -46,11 +46,11 @@ class AddressSerializer(serializers.ModelSerializer):
 
 
 class AddressCreateSerializer(serializers.ModelSerializer):
-    mobile = serializers.CharField(source='mobile_number')
+    mobile = serializers.CharField(source='mobile_number', required=False)
     alternate_mobile = serializers.CharField(source='alternate_mobile_number', required=False, allow_blank=True)
-    address_line1 = serializers.CharField(source='house_number')
-    address_line2 = serializers.CharField(source='street_address')
-    zip_code = serializers.CharField(source='pincode')
+    address_line1 = serializers.CharField(source='house_number', required=False)
+    address_line2 = serializers.CharField(source='street_address', required=False)
+    zip_code = serializers.CharField(source='pincode', required=False)
 
     class Meta:
         model = Address
@@ -58,32 +58,22 @@ class AddressCreateSerializer(serializers.ModelSerializer):
             'full_name', 'mobile', 'alternate_mobile',
             'address_line1', 'address_line2', 'landmark', 'country', 'state',
             'city', 'zip_code', 'address_type', 'is_default',
+            'delivery_instructions',
         ]
 
-    def validate_mobile(self, value):
-        cleaned = re.sub(r'[\s\-\(\)]', '', value)
-        if not re.match(r'^\+?\d{10,15}$', cleaned):
-            raise serializers.ValidationError('Enter a valid mobile number (10-15 digits).')
-        return value
-
-    def validate_alternate_mobile(self, value):
-        if not value:
-            return value
-        cleaned = re.sub(r'[\s\-\(\)]', '', value)
-        if not re.match(r'^\+?\d{10,15}$', cleaned):
-            raise serializers.ValidationError('Enter a valid alternate mobile number.')
-        return value
-
-    def validate_zip_code(self, value):
-        if not re.match(r'^\d{5,10}$', value):
-            raise serializers.ValidationError('Enter a valid zip code (5-10 digits).')
-        return value
-
-    def validate_address_type(self, value):
-        valid_types = ['Home', 'Office', 'Other']
-        if value not in valid_types:
-            raise serializers.ValidationError(f'Address type must be one of: {", ".join(valid_types)}.')
-        return value
+    def to_internal_value(self, data):
+        normalized = dict(data)
+        alias_map = {
+            'mobile': 'mobile_number',
+            'address_line1': 'house_number',
+            'address_line2': 'street_address',
+            'zip_code': 'pincode',
+            'alternate_mobile': 'alternate_mobile_number',
+        }
+        for alias, original in alias_map.items():
+            if alias not in normalized and original in normalized:
+                normalized[alias] = normalized[original]
+        return super().to_internal_value(normalized)
 
 
 class RegisterSerializer(serializers.ModelSerializer):

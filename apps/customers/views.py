@@ -17,16 +17,17 @@ User = get_user_model()
 
 class AddressCreateAPIView(GenericAPIView):
     serializer_class = AddressCreateSerializer
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         is_default = serializer.validated_data.get('is_default', False)
-        if request.user.is_authenticated and is_default:
+        if is_default:
             Address.objects.filter(user=request.user, is_default=True).update(is_default=False)
 
-        address = serializer.save(user=request.user if request.user.is_authenticated else None)
+        address = serializer.save(user=request.user)
 
         response_serializer = AddressSerializer(address)
         return Response({
