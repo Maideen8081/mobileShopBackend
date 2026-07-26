@@ -54,9 +54,11 @@ class Order(TimeStampedModel):
     ]
 
     ORDER_STATUS = [
+        ('order_placed', 'Order Placed'),
+        ('accepted', 'Accepted'),
         ('processing', 'Processing'),
-        ('confirmed', 'Confirmed'),
         ('shipped', 'Shipped'),
+        ('out_for_delivery', 'Out for Delivery'),
         ('delivered', 'Delivered'),
         ('cancelled', 'Cancelled'),
     ]
@@ -67,7 +69,7 @@ class Order(TimeStampedModel):
     address = models.ForeignKey('customers.Address', on_delete=models.SET_NULL, null=True, blank=True)
     payment_method = models.CharField(max_length=50, default='razorpay')
     payment_status = models.CharField(max_length=10, choices=PAYMENT_STATUS, default='pending')
-    order_status = models.CharField(max_length=20, choices=ORDER_STATUS, default='processing')
+    order_status = models.CharField(max_length=20, choices=ORDER_STATUS, default='order_placed')
     subtotal = models.DecimalField(max_digits=12, decimal_places=2)
     tax = models.DecimalField(max_digits=12, decimal_places=2)
     shipping_charge = models.DecimalField(max_digits=12, decimal_places=2)

@@ -87,9 +87,11 @@ class OrderListSerializer(serializers.ModelSerializer):
 
     def get_delivery_status(self, obj):
         status_map = {
-            'processing': 'Order Placed',
-            'confirmed': 'Packed',
+            'order_placed': 'Order Placed',
+            'accepted': 'Accepted',
+            'processing': 'Processing',
             'shipped': 'Shipped',
+            'out_for_delivery': 'Out for Delivery',
             'delivered': 'Delivered',
             'cancelled': 'Cancelled',
         }
@@ -245,9 +247,11 @@ class SimpleOrderSerializer(serializers.ModelSerializer):
 
     def get_delivery_status(self, obj):
         status_map = {
-            'processing': 'Order Placed',
-            'confirmed': 'Packed',
+            'order_placed': 'Order Placed',
+            'accepted': 'Accepted',
+            'processing': 'Processing',
             'shipped': 'Shipped',
+            'out_for_delivery': 'Out for Delivery',
             'delivered': 'Delivered',
             'cancelled': 'Cancelled',
         }
