@@ -3,7 +3,7 @@ import razorpay
 from django.db import transaction
 from rest_framework import status
 from rest_framework.generics import GenericAPIView, ListAPIView, RetrieveAPIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
 from apps.cart.models import Cart, CartItem
@@ -18,6 +18,8 @@ from .serializers import (
     CreateOrderSerializer,
     CreateRazorpayOrderSerializer,
     VerifyPaymentSerializer,
+    SimpleCreateOrderSerializer,
+    SimpleOrderSerializer,
 )
 
 
@@ -226,16 +228,16 @@ class CreateOrderAPIView(GenericAPIView):
         order = Order.objects.create(
             user=user,
             shipping_address={
-                'full_name': address.full_name,
-                'mobile': address.mobile_number,
-                'address_line1': address.house_number,
-                'address_line2': address.street_address,
-                'landmark': address.landmark,
-                'city': address.city,
-                'state': address.state,
-                'zip_code': address.pincode,
-                'country': address.country,
-            },
+                    'name': address.full_name,
+                    'phone': address.mobile_number,
+                    'address_line1': address.house_number,
+                    'address_line2': address.street_address,
+                    'landmark': address.landmark,
+                    'city': address.city,
+                    'state': address.state,
+                    'pincode': address.pincode,
+                    'country': address.country,
+                },
             address=address,
             payment_method='razorpay',
             payment_status='paid',
@@ -332,5 +334,197 @@ class OrderDetailAPIView(RetrieveAPIView):
         serializer = self.get_serializer(instance)
         return Response({
             'success': True,
+            'data': serializer.data,
+        })
+
+
+class SimpleCreateOrderAPIView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = SimpleCreateOrderSerializer
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        user = request.user
+
+        address_obj = None
+        shipping_addr = {}
+        delivery_address_id = data.get('delivery_address_id')
+        if delivery_address_id:
+            try:
+                address_obj = Address.objects.get(id=delivery_address_id, user=user)
+                shipping_addr = {
+                    'name': address_obj.full_name,
+                    'phone': address_obj.mobile_number,
+                    'address_line1': address_obj.house_number,
+                    'address_line2': address_obj.street_address,
+                    'landmark': address_obj.landmark,
+                    'city': address_obj.city,
+                    'state': address_obj.state,
+                    'pincode': address_obj.pincode,
+                    'country': address_obj.country,
+                }
+            except Address.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': 'Address not found.',
+                }, status=status.HTTP_404_NOT_FOUND)
+
+        payment_method = data.get('payment_method', 'card')
+        payment_status = 'paid' if payment_method != 'cod' else 'pending'
+
+        discount_amount = data.get('discount', 0)
+        coupon_code = data.get('coupon_code', '')
+        coupon_obj = None
+
+        if coupon_code:
+            try:
+                coupon_obj = Coupon.objects.get(code__iexact=coupon_code.strip())
+                if coupon_obj.is_valid and data['subtotal'] >= coupon_obj.minimum_amount:
+                    if coupon_obj.discount_type == 'percentage':
+                        coupon_discount = (coupon_obj.discount_value / 100) * data['subtotal']
+                    else:
+                        coupon_discount = coupon_obj.discount_value
+                    if coupon_discount > data['subtotal']:
+                        coupon_discount = data['subtotal']
+                    discount_amount = coupon_discount
+            except Coupon.DoesNotExist:
+                pass
+
+        grand_total = data['subtotal'] + data['tax'] + data['shipping'] - discount_amount
+        if grand_total < 0:
+            grand_total = 0
+
+        order = Order.objects.create(
+            user=user,
+            shipping_address=shipping_addr,
+            address=address_obj,
+            payment_method=payment_method,
+            payment_status=payment_status,
+            order_status='processing',
+            subtotal=data['subtotal'],
+            tax=data['tax'],
+            shipping_charge=data['shipping'],
+            discount=discount_amount,
+            grand_total=grand_total,
+            coupon=coupon_obj,
+            coupon_code=coupon_code,
+        )
+
+        for item_data in data['items']:
+            OrderItem.objects.create(
+                order=order,
+                product_id=item_data['product_id'],
+                variant_id=item_data.get('variant_id'),
+                product_name=item_data['name'],
+                image=item_data.get('image', ''),
+                selected_color=item_data.get('color', ''),
+                selected_ram=item_data.get('ram', ''),
+                selected_storage=item_data.get('storage', ''),
+                quantity=item_data['quantity'],
+                price=item_data['price'],
+                total_price=item_data['price'] * item_data['quantity'],
+            )
+
+        if coupon_obj:
+            Coupon.objects.filter(id=coupon_obj.id).update(used_count=coupon_obj.used_count + 1)
+
+        order_serializer = SimpleOrderSerializer(order)
+        return Response({
+            'success': True,
+            'message': 'Order placed successfully.',
+            'data': order_serializer.data,
+        }, status=status.HTTP_201_CREATED)
+
+
+class AllOrdersListAPIView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = SimpleOrderSerializer
+
+    def get(self, request, *args, **kwargs):
+        if request.user.is_staff or request.user.is_superuser:
+            queryset = Order.objects.all().prefetch_related('items').order_by('-created_at')
+        else:
+            queryset = Order.objects.filter(user=request.user).prefetch_related('items').order_by('-created_at')
+
+        search = request.query_params.get('search', '').strip()
+        order_status = request.query_params.get('status', '').strip()
+        payment_status = request.query_params.get('payment_status', '').strip()
+
+        if search:
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(order_number__icontains=search) |
+                Q(user__first_name__icontains=search) |
+                Q(user__last_name__icontains=search) |
+                Q(user__email__icontains=search) |
+                Q(user__mobile_number__icontains=search)
+            )
+        if order_status:
+            queryset = queryset.filter(order_status=order_status)
+        if payment_status:
+            queryset = queryset.filter(payment_status=payment_status)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+        })
+
+
+class OrderDetailByNumberAPIView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = SimpleOrderSerializer
+
+    def get(self, request, order_id, *args, **kwargs):
+        try:
+            order = Order.objects.prefetch_related('items').get(id=order_id, user=request.user)
+        except Order.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Order not found.',
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.get_serializer(order)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+        })
+
+
+class UpdateOrderStatusAPIView(GenericAPIView):
+    permission_classes = [AllowAny]
+
+    def put(self, request, order_number, *args, **kwargs):
+        try:
+            order = Order.objects.get(order_number=order_number)
+        except Order.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Order not found.',
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        new_status = request.data.get('status', '').strip()
+        valid_statuses = [choice[0] for choice in Order.ORDER_STATUS]
+        if new_status not in valid_statuses:
+            return Response({
+                'success': False,
+                'message': f'Invalid status. Must be one of: {", ".join(valid_statuses)}',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        order.order_status = new_status
+        if new_status == 'delivered':
+            order.payment_status = 'paid'
+        elif new_status == 'cancelled':
+            order.payment_status = 'failed'
+        order.save()
+
+        serializer = SimpleOrderSerializer(order)
+        return Response({
+            'success': True,
+            'message': f'Order status updated to {new_status}.',
             'data': serializer.data,
         })
