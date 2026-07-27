@@ -31,33 +31,18 @@ class ReviewSerializer(serializers.ModelSerializer):
 
 
 class ReviewCreateSerializer(serializers.ModelSerializer):
-    images = serializers.ListField(
-        child=serializers.ImageField(),
-        required=False,
-        write_only=True,
-    )
-
     class Meta:
         model = Review
-        fields = ['product', 'star', 'rating', 'content', 'images']
+        fields = ['product', 'star', 'rating', 'content']
 
     def validate_star(self, value):
         if value < 1 or value > 5:
             raise serializers.ValidationError('Star must be between 1 and 5.')
         return value
 
-    def validate_images(self, value):
-        if len(value) > 10:
-            raise serializers.ValidationError('Maximum 10 images allowed per review.')
-        return value
-
     def create(self, validated_data):
-        images_data = validated_data.pop('images', [])
         user = self.context['request'].user
-        review = Review.objects.create(user=user, **validated_data)
-        for image in images_data:
-            ReviewImage.objects.create(review=review, image=image)
-        return review
+        return Review.objects.create(user=user, **validated_data)
 
 
 class ReviewUpdateSerializer(serializers.ModelSerializer):
