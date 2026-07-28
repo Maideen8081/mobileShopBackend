@@ -92,6 +92,23 @@ class RepairBookSerializer(serializers.Serializer):
     courier_pickup_date = serializers.DateField(required=False, allow_null=True)
     courier_expected_delivery_date = serializers.DateField(required=False, allow_null=True)
 
+    def to_internal_value(self, data):
+        mutable = {key: data[key] for key in data.keys()}
+
+        for frontend_field, backend_field in FIELD_ALIASES.items():
+            if frontend_field in mutable and backend_field not in mutable:
+                mutable[backend_field] = mutable.pop(frontend_field)
+
+        for num_field in ['mobile_number', 'alternate_number']:
+            if num_field in mutable and mutable[num_field]:
+                mutable[num_field] = re.sub(r'\D', '', str(mutable[num_field]))
+
+        if 'imei_number' in mutable and mutable['imei_number']:
+            if not re.match(r'^\d{15}$', str(mutable['imei_number'])):
+                mutable['imei_number'] = ''
+
+        return super().to_internal_value(mutable)
+
     def validate_service_id(self, value):
         if not RepairService.objects.filter(id=value, is_active=True).exists():
             raise serializers.ValidationError('Repair service not found or inactive.')
