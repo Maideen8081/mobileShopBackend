@@ -10,7 +10,7 @@ STATUS_TRANSITIONS = {
 
 FIELD_ALIASES = {
     'customer_mobile': 'mobile_number',
-    'customer_alternate_mobile so': 'alternate_number',
+    'customer_alternate_mobile': 'alternate_number',
     'customer_email': 'email',
     'customer_address': 'address',
     'estimated_days': 'estimated_completion_days',

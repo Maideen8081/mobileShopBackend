@@ -1,3 +1,6 @@
+import logging
+
+from django.db import DatabaseError
 from rest_framework import status
 from rest_framework.generics import (
     CreateAPIView,
@@ -7,6 +10,7 @@ from rest_framework.generics import (
     UpdateAPIView,
 )
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.repairs.models import RepairNote, RepairTicket
@@ -22,8 +26,11 @@ from apps.repairs.serializers import (
 )
 from apps.repairs.services import RepairTicketService
 
+logger = logging.getLogger(__name__)
+
 
 class RepairTicketListAPIView(ListAPIView):
+    permission_classes = [AllowAny]
     queryset = RepairTicket.objects.select_related().prefetch_related('photos').all()
     serializer_class = RepairTicketListSerializer
     search_fields = [
@@ -59,111 +66,191 @@ class RepairTicketListAPIView(ListAPIView):
         return qs
 
     def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-        page = self.paginate_queryset(queryset)
+        try:
+            queryset = self.filter_queryset(self.get_queryset())
+            page = self.paginate_queryset(queryset)
 
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return Response({
+                    'success': True,
+                    'count': self.paginator.page.paginator.count if self.paginator else len(queryset),
+                    'next': self.paginator.get_next_link() if self.paginator else None,
+                    'previous': self.paginator.get_previous_link() if self.paginator else None,
+                    'data': serializer.data,
+                })
+
+            serializer = self.get_serializer(queryset, many=True)
             return Response({
                 'success': True,
-                'count': self.paginator.page.paginator.count if self.paginator else len(queryset),
-                'next': self.paginator.get_next_link() if self.paginator else None,
-                'previous': self.paginator.get_previous_link() if self.paginator else None,
                 'data': serializer.data,
             })
-
-        serializer = self.get_serializer(queryset, many=True)
-        return Response({
-            'success': True,
-            'data': serializer.data,
-        })
+        except DatabaseError as e:
+            logger.error('[repairService] Database error listing repairs: %s', e)
+            return Response({
+                'success': False,
+                'message': 'Database error. Please try again.',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class RepairTicketCreateAPIView(CreateAPIView):
+    permission_classes = [AllowAny]
     queryset = RepairTicket.objects.all()
     serializer_class = RepairTicketCreateSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        ticket = serializer.save()
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            ticket = serializer.save()
 
-        detail = RepairTicketDetailSerializer(ticket)
-        return Response({
-            'success': True,
-            'message': 'Repair ticket created successfully',
-            'data': detail.data,
-        }, status=status.HTTP_201_CREATED)
+            detail = RepairTicketDetailSerializer(ticket)
+            return Response({
+                'success': True,
+                'message': 'Repair ticket created successfully',
+                'data': detail.data,
+            }, status=status.HTTP_201_CREATED)
+        except DatabaseError as e:
+            logger.error('[repairService] Database error creating repair ticket: %s', e)
+            return Response({
+                'success': False,
+                'message': 'Database error. Please try again.',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except Exception as e:
+            logger.error('[repairService] Unexpected error creating repair ticket: %s', e)
+            return Response({
+                'success': False,
+                'message': 'An error occurred while creating the repair ticket.',
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class RepairTicketDetailAPIView(RetrieveAPIView):
+    permission_classes = [AllowAny]
     queryset = RepairTicket.objects.prefetch_related('photos').all()
     serializer_class = RepairTicketDetailSerializer
 
     def retrieve(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance)
-        return Response({
-            'success': True,
-            'data': serializer.data,
-        })
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            return Response({
+                'success': True,
+                'data': serializer.data,
+            })
+        except RepairTicket.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Repair ticket not found.',
+            }, status=status.HTTP_404_NOT_FOUND)
+        except DatabaseError as e:
+            logger.error('[repairService] Database error fetching repair ticket: %s', e)
+            return Response({
+                'success': False,
+                'message': 'Database error. Please try again.',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class RepairTicketUpdateAPIView(UpdateAPIView):
+    permission_classes = [AllowAny]
     queryset = RepairTicket.objects.prefetch_related('photos').all()
     serializer_class = RepairTicketUpdateSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
 
-        ticket = RepairTicket.objects.prefetch_related('photos').get(pk=instance.pk)
-        detail = RepairTicketDetailSerializer(ticket)
-        return Response({
-            'success': True,
-            'message': 'Repair ticket updated successfully',
-            'data': detail.data,
-        })
+            ticket = RepairTicket.objects.prefetch_related('photos').get(pk=instance.pk)
+            detail = RepairTicketDetailSerializer(ticket)
+            return Response({
+                'success': True,
+                'message': 'Repair ticket updated successfully',
+                'data': detail.data,
+            })
+        except RepairTicket.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Repair ticket not found.',
+            }, status=status.HTTP_404_NOT_FOUND)
+        except DatabaseError as e:
+            logger.error('[repairService] Database error updating repair ticket: %s', e)
+            return Response({
+                'success': False,
+                'message': 'Database error. Please try again.',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except Exception as e:
+            logger.error('[repairService] Unexpected error updating repair ticket: %s', e)
+            return Response({
+                'success': False,
+                'message': 'An error occurred while updating the repair ticket.',
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class RepairTicketPartialUpdateAPIView(UpdateAPIView):
+    permission_classes = [AllowAny]
     queryset = RepairTicket.objects.prefetch_related('photos').all()
     serializer_class = RepairTicketUpdateSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def partial_update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
 
-        ticket = RepairTicket.objects.prefetch_related('photos').get(pk=instance.pk)
-        detail = RepairTicketDetailSerializer(ticket)
-        return Response({
-            'success': True,
-            'message': 'Repair ticket updated successfully',
-            'data': detail.data,
-        })
+            ticket = RepairTicket.objects.prefetch_related('photos').get(pk=instance.pk)
+            detail = RepairTicketDetailSerializer(ticket)
+            return Response({
+                'success': True,
+                'message': 'Repair ticket updated successfully',
+                'data': detail.data,
+            })
+        except RepairTicket.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Repair ticket not found.',
+            }, status=status.HTTP_404_NOT_FOUND)
+        except DatabaseError as e:
+            logger.error('[repairService] Database error updating repair ticket: %s', e)
+            return Response({
+                'success': False,
+                'message': 'Database error. Please try again.',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class RepairTicketDeleteAPIView(DestroyAPIView):
+    permission_classes = [AllowAny]
     queryset = RepairTicket.objects.all()
 
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        ticket_number = instance.ticket_number
-        instance.delete()
-        return Response({
-            'success': True,
-            'message': f'Repair ticket {ticket_number} deleted successfully',
-        })
+        try:
+            instance = self.get_object()
+            ticket_number = instance.ticket_number
+            instance.delete()
+            return Response({
+                'success': True,
+                'message': f'Repair ticket {ticket_number} deleted successfully',
+            })
+        except RepairTicket.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Repair ticket not found.',
+            }, status=status.HTTP_404_NOT_FOUND)
+        except DatabaseError as e:
+            logger.error('[repairService] Database error deleting repair ticket: %s', e)
+            return Response({
+                'success': False,
+                'message': 'Database error. Please try again.',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class RepairTicketDashboardCountsAPIView(ListAPIView):
+    permission_classes = [AllowAny]
     queryset = RepairTicket.objects.all()
 
     def list(self, request, *args, **kwargs):
@@ -175,52 +262,79 @@ class RepairTicketDashboardCountsAPIView(ListAPIView):
 
 
 class RepairTicketStatusUpdateAPIView(UpdateAPIView):
+    permission_classes = [AllowAny]
     queryset = RepairTicket.objects.all()
     serializer_class = RepairTicketStatusSerializer
 
     def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
 
-        new_status = serializer.validated_data['status']
-        success, message = RepairTicketService.update_status(instance, new_status)
+            new_status = serializer.validated_data['status']
+            success, message = RepairTicketService.update_status(instance, new_status)
 
-        if not success:
+            if not success:
+                return Response({
+                    'success': False,
+                    'message': message,
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            detail = RepairTicketDetailSerializer(instance)
+            return Response({
+                'success': True,
+                'message': message,
+                'data': detail.data,
+            })
+        except RepairTicket.DoesNotExist:
             return Response({
                 'success': False,
-                'message': message,
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        detail = RepairTicketDetailSerializer(instance)
-        return Response({
-            'success': True,
-            'message': message,
-            'data': detail.data,
-        })
+                'message': 'Repair ticket not found.',
+            }, status=status.HTTP_404_NOT_FOUND)
+        except DatabaseError as e:
+            logger.error('[repairService] Database error updating status: %s', e)
+            return Response({
+                'success': False,
+                'message': 'Database error. Please try again.',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class RepairTicketAssignTechnicianAPIView(UpdateAPIView):
+    permission_classes = [AllowAny]
     queryset = RepairTicket.objects.all()
     serializer_class = RepairTicketTechnicianSerializer
 
     def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
 
-        technician = serializer.validated_data['assigned_technician']
-        success, message = RepairTicketService.assign_technician(instance, technician)
+            technician = serializer.validated_data['assigned_technician']
+            success, message = RepairTicketService.assign_technician(instance, technician)
 
-        detail = RepairTicketDetailSerializer(instance)
-        return Response({
-            'success': True,
-            'message': message,
-            'data': detail.data,
-        })
+            detail = RepairTicketDetailSerializer(instance)
+            return Response({
+                'success': True,
+                'message': message,
+                'data': detail.data,
+            })
+        except RepairTicket.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Repair ticket not found.',
+            }, status=status.HTTP_404_NOT_FOUND)
+        except DatabaseError as e:
+            logger.error('[repairService] Database error assigning technician: %s', e)
+            return Response({
+                'success': False,
+                'message': 'Database error. Please try again.',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class RepairNoteListAPIView(ListAPIView):
+    permission_classes = [AllowAny]
     serializer_class = RepairNoteListSerializer
 
     def get_queryset(self):
@@ -228,15 +342,23 @@ class RepairNoteListAPIView(ListAPIView):
         return RepairNote.objects.filter(repair_ticket_id=ticket_id)
 
     def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        return Response({
-            'success': True,
-            'data': serializer.data,
-        })
+        try:
+            queryset = self.get_queryset()
+            serializer = self.get_serializer(queryset, many=True)
+            return Response({
+                'success': True,
+                'data': serializer.data,
+            })
+        except DatabaseError as e:
+            logger.error('[repairService] Database error listing notes: %s', e)
+            return Response({
+                'success': False,
+                'message': 'Database error. Please try again.',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class RepairNoteCreateAPIView(CreateAPIView):
+    permission_classes = [AllowAny]
     serializer_class = RepairNoteCreateSerializer
 
     def create(self, request, *args, **kwargs):
@@ -249,15 +371,22 @@ class RepairNoteCreateAPIView(CreateAPIView):
                 'message': 'Repair ticket not found.',
             }, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = self.get_serializer(
-            data=request.data,
-            context={'ticket_id': ticket_id},
-        )
-        serializer.is_valid(raise_exception=True)
-        note = serializer.save()
+        try:
+            serializer = self.get_serializer(
+                data=request.data,
+                context={'ticket_id': ticket_id},
+            )
+            serializer.is_valid(raise_exception=True)
+            note = serializer.save()
 
-        out = RepairNoteListSerializer(note)
-        return Response({
-            'success': True,
-            'data': out.data,
-        }, status=status.HTTP_201_CREATED)
+            out = RepairNoteListSerializer(note)
+            return Response({
+                'success': True,
+                'data': out.data,
+            }, status=status.HTTP_201_CREATED)
+        except DatabaseError as e:
+            logger.error('[repairService] Database error creating note: %s', e)
+            return Response({
+                'success': False,
+                'message': 'Database error. Please try again.',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
