@@ -1,9 +1,5 @@
-from decimal import Decimal
-
-from django.db.models import Count, Q
-
-from apps.repairs.constants import STATUS_TRANSITIONS
-from apps.repairs.models import RepairTicket, RepairTicketPhoto
+from apps.repairs.constants import STATUS_LABELS, STATUS_TRANSITIONS
+from apps.repairs.models import RepairStatusHistory, RepairTicket, RepairTicketPhoto
 
 
 class RepairTicketService:
@@ -13,24 +9,47 @@ class RepairTicketService:
         base = RepairTicket.objects
         return {
             'total_tickets': base.count(),
+            'online_tickets': base.filter(source='online').count(),
+            'local_tickets': base.filter(source='local').count(),
             'pending': base.filter(status='pending').count(),
-            'diagnosing': base.filter(status='diagnosing').count(),
-            'waiting_approval': base.filter(status='waiting_approval').count(),
-            'in_progress': base.filter(status='in_progress').count(),
+            'device_received': base.filter(status='device_received').count(),
+            'inspection': base.filter(status='inspection').count(),
+            'waiting_parts': base.filter(status='waiting_parts').count(),
+            'repair_in_progress': base.filter(status='repair_in_progress').count(),
+            'quality_check': base.filter(status='quality_check').count(),
+            'ready_for_pickup': base.filter(status='ready_for_pickup').count(),
+            'shipped': base.filter(status='shipped').count(),
             'completed': base.filter(status='completed').count(),
-            'delivered': base.filter(status='delivered').count(),
             'cancelled': base.filter(status='cancelled').count(),
         }
 
     @staticmethod
-    def update_status(ticket, new_status):
+    def update_status(ticket, new_status, updated_by='Admin', notes=''):
         current = ticket.status
         allowed = STATUS_TRANSITIONS.get(current, [])
         if new_status not in allowed:
-            return False, f'Cannot transition from "{current}" to "{new_status}".'
+            return False, f'Cannot transition from "{STATUS_LABELS.get(current, current)}" to "{STATUS_LABELS.get(new_status, new_status)}".'
+
         ticket.status = new_status
         ticket.save(update_fields=['status'])
-        return True, 'Status updated successfully.'
+
+        RepairStatusHistory.objects.create(
+            repair_ticket=ticket,
+            status=new_status,
+            updated_by=updated_by,
+            notes=notes,
+        )
+
+        return True, f'Status updated to "{STATUS_LABELS.get(new_status, new_status)}".'
+
+    @staticmethod
+    def create_ticket_with_history(ticket, updated_by='System'):
+        RepairStatusHistory.objects.create(
+            repair_ticket=ticket,
+            status=ticket.status,
+            updated_by=updated_by,
+            notes='Ticket created.',
+        )
 
     @staticmethod
     def assign_technician(ticket, technician_name):

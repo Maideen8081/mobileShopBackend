@@ -1,18 +1,43 @@
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
 dist/
 build/
 *.egg
 .eggs/
+*.so
 
 # Virtual Environment
 venv/
+.venv/
+env/
+ENV/
+
+# Environment Variables
 .env
+.env.*
+!.env.example
 
 # Database
 *.sqlite3
+*.sqlite3-journal
+
+# Django
+staticfiles/
+media/
+**/migrations/__pycache__/
+
+# Coverage & Testing
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
+.tox/
+.nox/
 
 # IDE
 .vscode/
@@ -20,17 +45,29 @@ venv/
 *.swp
 *.swo
 *~
-
-# Django
-staticfiles/
-media/
-
-# Logs
-logs/*.log
+*.sublime-project
+*.sublime-workspace
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
+._*
 
-# Project specific
-db.sqlite3
+# Logs
+logs/
+*.log
+*.pid
+*.seed
+
+# Node (if frontend co-located)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Misc
+*.bak
+*.tmp
+*.temp
+.cache/
