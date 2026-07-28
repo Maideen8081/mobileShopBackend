@@ -4,6 +4,10 @@ INSTALLED_APPS += ['cloudinary', 'cloudinary_storage']
 
 DEBUG = False
 
+# Keep database connections alive for 600s to reduce Render cold start delays
+DATABASES['default']['CONN_MAX_AGE'] = 600
+DATABASES['default']['CONN_HEALTH_CHECKS'] = True
+
 ALLOWED_HOSTS = [
     host.strip()
     for host in config(
@@ -62,6 +66,11 @@ LOGGING = {
         'django': {
             'handlers': ['console'],
             'level': 'WARNING',
+            'propagate': True,
+        },
+        'apps.cart': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
             'propagate': True,
         },
     },

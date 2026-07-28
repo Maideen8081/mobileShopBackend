@@ -1,7 +1,12 @@
+import logging
+
+from django.db.models import Prefetch
 from rest_framework import serializers
 from apps.products.models import Product, ProductVariant, VariantImage
 from .models import Cart, CartItem
 from apps.common.serializers import AbsoluteImageField, get_absolute_image_url
+
+logger = logging.getLogger(__name__)
 
 
 class CartItemSerializer(serializers.ModelSerializer):
@@ -29,9 +34,12 @@ class CartItemSerializer(serializers.ModelSerializer):
         ]
 
     def get_image(self, obj):
-        main_image = VariantImage.objects.filter(variant=obj.variant, is_main=True).first()
-        if not main_image:
-            main_image = VariantImage.objects.filter(variant=obj.variant).first()
+        images = getattr(obj, '_prefetched_variant_images', None)
+        if images is None:
+            images = VariantImage.objects.filter(variant=obj.variant).order_by('-is_main', 'id')
+        main_image = next((img for img in images if img.is_main), None)
+        if not main_image and images:
+            main_image = images[0]
         if main_image and main_image.image:
             return get_absolute_image_url(main_image.image, self.context.get('request'))
         if obj.product.common_image:
@@ -57,7 +65,17 @@ class CartSerializer(serializers.ModelSerializer):
         ]
 
     def get_products(self, obj):
-        items = obj.items.select_related('product', 'variant__images').all()
+        items = (
+            obj.items
+            .select_related('product', 'variant')
+            .prefetch_related(
+                Prefetch(
+                    'variant__images',
+                    queryset=VariantImage.objects.order_by('-is_main', 'id'),
+                    to_attr='_prefetched_variant_images',
+                )
+            )
+        )
         return CartItemSerializer(items, many=True, context=self.context).data
 
 
