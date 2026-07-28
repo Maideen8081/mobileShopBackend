@@ -75,13 +75,7 @@ class RepairBookAPIView(GenericAPIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        try:
-            service = RepairService.objects.get(id=data['service_id'])
-        except RepairService.DoesNotExist:
-            return Response({
-                'success': False,
-                'message': 'Repair service not found.',
-            }, status=status.HTTP_404_NOT_FOUND)
+        service = data.get('service')
 
         try:
             ticket = RepairTicket.objects.create(

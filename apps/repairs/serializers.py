@@ -73,7 +73,7 @@ class NotificationSerializer(serializers.ModelSerializer):
 
 
 class RepairBookSerializer(serializers.Serializer):
-    service_id = serializers.IntegerField()
+    service_id = serializers.IntegerField(required=False, allow_null=True)
     customer_name = serializers.CharField(max_length=100)
     mobile_number = serializers.CharField(max_length=15)
     alternate_number = serializers.CharField(max_length=15, required=False, default='')
@@ -109,10 +109,21 @@ class RepairBookSerializer(serializers.Serializer):
 
         return super().to_internal_value(mutable)
 
-    def validate_service_id(self, value):
-        if not RepairService.objects.filter(id=value, is_active=True).exists():
-            raise serializers.ValidationError('Repair service not found or inactive.')
-        return value
+    def validate(self, data):
+        service_id = data.get('service_id')
+        issue_category = data.get('issue_category', '')
+
+        if service_id:
+            try:
+                data['service'] = RepairService.objects.get(id=service_id, is_active=True)
+            except RepairService.DoesNotExist:
+                raise serializers.ValidationError({'service_id': 'Repair service not found or inactive.'})
+        else:
+            data['service'] = RepairService.objects.filter(
+                name__iexact=issue_category, is_active=True
+            ).first()
+
+        return data
 
     def validate_mobile_number(self, value):
         cleaned = re.sub(r'\D', '', str(value))
