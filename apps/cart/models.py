@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.conf import settings
 from apps.common.models import TimeStampedModel
@@ -23,7 +25,7 @@ class Cart(TimeStampedModel):
 
     @property
     def tax(self):
-        return self.subtotal * 0.18
+        return self.subtotal * Decimal('0.18')
 
     @property
     def shipping_charge(self):
