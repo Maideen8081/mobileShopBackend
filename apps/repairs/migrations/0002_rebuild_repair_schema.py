@@ -7,27 +7,29 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ('products', '0001_initial'),
     ]
 
     operations = [
-        # Remove old migration record from django_migrations (Render has old schema)
+        # Step 1: Remove ALL old repair migration records from django_migrations
         migrations.RunSQL(
             sql="DELETE FROM django_migrations WHERE app='repairs';",
             reverse_sql="SELECT 1;",
         ),
 
-        # Drop old repair tables if they exist (fresh start)
+        # Step 2: Drop old repair tables (they have old schema without source, service_id, etc.)
         migrations.RunSQL(
             sql="""
                 DROP TABLE IF EXISTS repair_notes CASCADE;
                 DROP TABLE IF EXISTS repair_ticket_photos CASCADE;
                 DROP TABLE IF EXISTS repair_tickets CASCADE;
+                DROP TABLE IF EXISTS repair_services CASCADE;
+                DROP TABLE IF EXISTS repair_status_history CASCADE;
+                DROP TABLE IF EXISTS notifications CASCADE;
             """,
             reverse_sql="SELECT 1;",
         ),
 
-        # Create RepairService
+        # Step 3: Create RepairService
         migrations.CreateModel(
             name='RepairService',
             fields=[
@@ -46,7 +48,7 @@ class Migration(migrations.Migration):
             },
         ),
 
-        # Create RepairTicket
+        # Step 4: Create RepairTicket
         migrations.CreateModel(
             name='RepairTicket',
             fields=[
@@ -88,7 +90,7 @@ class Migration(migrations.Migration):
             },
         ),
 
-        # Create RepairStatusHistory
+        # Step 5: Create RepairStatusHistory
         migrations.CreateModel(
             name='RepairStatusHistory',
             fields=[
@@ -106,7 +108,7 @@ class Migration(migrations.Migration):
             },
         ),
 
-        # Create RepairTicketPhoto
+        # Step 6: Create RepairTicketPhoto
         migrations.CreateModel(
             name='RepairTicketPhoto',
             fields=[
@@ -121,7 +123,7 @@ class Migration(migrations.Migration):
             },
         ),
 
-        # Create RepairNote
+        # Step 7: Create RepairNote
         migrations.CreateModel(
             name='RepairNote',
             fields=[
@@ -138,7 +140,7 @@ class Migration(migrations.Migration):
             },
         ),
 
-        # Create Notification
+        # Step 8: Create Notification
         migrations.CreateModel(
             name='Notification',
             fields=[
@@ -159,7 +161,7 @@ class Migration(migrations.Migration):
             },
         ),
 
-        # Add indexes
+        # Step 9: Add indexes
         migrations.AddIndex(
             model_name='repairticket',
             index=models.Index(fields=['ticket_number'], name='repair_tick_ticket__08c81e_idx'),
