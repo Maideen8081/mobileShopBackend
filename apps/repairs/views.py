@@ -380,6 +380,8 @@ class RepairTicketStatusUpdateAPIView(GenericAPIView):
         serializer.is_valid(raise_exception=True)
 
         new_status = serializer.validated_data['status']
+        if new_status == 'received':
+            new_status = 'device_received'
         notes = serializer.validated_data.get('notes', '')
         updated_by = serializer.validated_data.get('updated_by', 'Admin')
         old_status = ticket.status
