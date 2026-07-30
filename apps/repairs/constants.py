@@ -3,7 +3,7 @@ STATUS_TRANSITIONS = {
     'accepted': ['device_received', 'cancelled'],
     'rejected': [],
     'device_received': ['awaiting_approval', 'cancelled'],
-    'awaiting_approval': ['inspection', 'cancelled'],
+    'awaiting_approval': ['cancelled'],
     'inspection': ['waiting_parts', 'repair_in_progress', 'cancelled'],
     'waiting_parts': ['repair_in_progress', 'cancelled'],
     'repair_in_progress': ['quality_check', 'cancelled'],
