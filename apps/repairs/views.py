@@ -318,11 +318,19 @@ class RepairTicketUpdateAPIView(UpdateAPIView):
             serializer.save()
 
             ticket = RepairTicket.objects.prefetch_related('photos').get(pk=instance.pk)
+        try:
             detail = RepairTicketDetailSerializer(ticket)
             return Response({
                 'success': True,
-                'message': 'Repair ticket updated successfully',
+                'message': message,
                 'data': detail.data,
+            })
+        except DatabaseError as e:
+            logger.error('[repairService] Database error serializing ticket after approve: %s', e)
+            return Response({
+                'success': True,
+                'message': message,
+                'data': None,
             })
         except RepairTicket.DoesNotExist:
             return Response({
