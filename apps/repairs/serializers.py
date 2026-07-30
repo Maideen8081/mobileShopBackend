@@ -77,7 +77,7 @@ class RepairBookSerializer(serializers.Serializer):
     customer_name = serializers.CharField(max_length=100)
     mobile_number = serializers.CharField(max_length=15)
     alternate_number = serializers.CharField(max_length=15, required=False, default='')
-    email = serializers.EmailField(required=False, default='')
+    email = serializers.EmailField(required=True)
     address = serializers.CharField(required=False, default='')
     device_brand = serializers.CharField(max_length=100)
     device_model = serializers.CharField(max_length=100)

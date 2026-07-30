@@ -14,15 +14,15 @@ STATUS_TRANSITIONS = {
 }
 
 STATUS_LABELS = {
-    'pending': 'Pending',
+    'pending': 'Submitted',
     'accepted': 'Accepted',
     'rejected': 'Rejected',
-    'device_received': 'Device Received',
-    'inspection': 'Inspection',
+    'device_received': 'Received',
+    'inspection': 'Diagnosing',
     'waiting_parts': 'Waiting for Parts',
     'repair_in_progress': 'Repair In Progress',
     'quality_check': 'Quality Check',
-    'ready_for_pickup': 'Ready for Pickup',
+    'ready_for_pickup': 'Ready for Delivery',
     'shipped': 'Shipped',
     'completed': 'Completed',
     'cancelled': 'Cancelled',
