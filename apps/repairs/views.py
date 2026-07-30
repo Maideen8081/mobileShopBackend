@@ -331,14 +331,14 @@ class RepairTicketUpdateAPIView(UpdateAPIView):
             detail = RepairTicketDetailSerializer(ticket)
             return Response({
                 'success': True,
-                'message': message,
+                'message': 'Repair ticket updated successfully.',
                 'data': detail.data,
             })
         except DatabaseError as e:
             logger.error('[repairService] Database error serializing ticket after approve: %s', e)
             return Response({
                 'success': True,
-                'message': message,
+                'message': 'Repair ticket updated successfully.',
                 'data': None,
             })
         except RepairTicket.DoesNotExist:
