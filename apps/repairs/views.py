@@ -318,6 +318,12 @@ class RepairTicketUpdateAPIView(UpdateAPIView):
             serializer.save()
 
             ticket = RepairTicket.objects.prefetch_related('photos').get(pk=instance.pk)
+        except DatabaseError as e:
+            logger.error('[repairService] Database error updating ticket: %s', e)
+            return Response({
+                'success': False,
+                'message': 'Database error. Please try again.',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         try:
             detail = RepairTicketDetailSerializer(ticket)
             return Response({
