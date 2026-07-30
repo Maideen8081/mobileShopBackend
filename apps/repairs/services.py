@@ -2,7 +2,36 @@ from apps.repairs.constants import STATUS_LABELS, STATUS_TRANSITIONS
 from apps.repairs.models import RepairStatusHistory, RepairTicket, RepairTicketPhoto
 
 
+CUSTOMER_APPROVED_TRANSITIONS = {
+    'awaiting_approval': {'approve': 'inspection', 'decline': 'cancelled'},
+}
+
+
 class RepairTicketService:
+
+    @staticmethod
+    def customer_approve(ticket, action, notes=''):
+        allowed = CUSTOMER_APPROVED_TRANSITIONS.get(ticket.status, {})
+        new_status = allowed.get(action)
+        if not new_status:
+            return False, f'Cannot {action} in current status.'
+
+        ticket.status = new_status
+        if action == 'approve':
+            ticket.customer_approved = True
+            ticket.save(update_fields=['status', 'customer_approved'])
+        else:
+            ticket.save(update_fields=['status'])
+
+        label = 'approved' if action == 'approve' else 'declined'
+        RepairStatusHistory.objects.create(
+            repair_ticket=ticket,
+            status=new_status,
+            updated_by='Customer',
+            notes=notes or f'Customer {label} the repair estimate.',
+        )
+
+        return True, f'Customer {label} the repair estimate.'
 
     @staticmethod
     def get_dashboard_counts():
@@ -15,6 +44,7 @@ class RepairTicketService:
             'accepted': base.filter(status='accepted').count(),
             'rejected': base.filter(status='rejected').count(),
             'device_received': base.filter(status='device_received').count(),
+            'awaiting_approval': base.filter(status='awaiting_approval').count(),
             'inspection': base.filter(status='inspection').count(),
             'waiting_parts': base.filter(status='waiting_parts').count(),
             'repair_in_progress': base.filter(status='repair_in_progress').count(),
@@ -26,14 +56,17 @@ class RepairTicketService:
         }
 
     @staticmethod
-    def update_status(ticket, new_status, updated_by='Admin', notes=''):
+    def update_status(ticket, new_status, updated_by='Admin', notes='', extra_fields=None):
         current = ticket.status
         allowed = STATUS_TRANSITIONS.get(current, [])
         if new_status not in allowed:
             return False, f'Cannot transition from "{STATUS_LABELS.get(current, current)}" to "{STATUS_LABELS.get(new_status, new_status)}".'
 
         ticket.status = new_status
-        ticket.save(update_fields=['status'])
+        if extra_fields:
+            for field, value in extra_fields.items():
+                setattr(ticket, field, value)
+        ticket.save(update_fields=['status'] + (list(extra_fields.keys()) if extra_fields else []))
 
         RepairStatusHistory.objects.create(
             repair_ticket=ticket,

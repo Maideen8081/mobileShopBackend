@@ -30,6 +30,7 @@ from apps.repairs.notifications import (
 from apps.repairs.serializers import (
     NotificationSerializer,
     RepairBookSerializer,
+    RepairCustomerApproveSerializer,
     RepairNoteCreateSerializer,
     RepairNoteListSerializer,
     RepairServiceSerializer,
@@ -386,7 +387,15 @@ class RepairTicketStatusUpdateAPIView(GenericAPIView):
         updated_by = serializer.validated_data.get('updated_by', 'Admin')
         old_status = ticket.status
 
-        success, message = RepairTicketService.update_status(ticket, new_status, updated_by, notes)
+        extra_fields = {}
+        repair_reason = serializer.validated_data.get('repair_reason', '')
+        repair_charge = serializer.validated_data.get('repair_charge')
+        if repair_reason:
+            extra_fields['repair_reason'] = repair_reason
+        if repair_charge is not None:
+            extra_fields['repair_charge'] = repair_charge
+
+        success, message = RepairTicketService.update_status(ticket, new_status, updated_by, notes, extra_fields=extra_fields if extra_fields else None)
 
         if not success:
             return Response({
@@ -395,6 +404,48 @@ class RepairTicketStatusUpdateAPIView(GenericAPIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         send_status_update_notification(ticket, old_status, new_status)
+
+        detail = RepairTicketDetailSerializer(ticket)
+        return Response({
+            'success': True,
+            'message': message,
+            'data': detail.data,
+        })
+
+
+class RepairTicketCustomerApproveAPIView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = RepairCustomerApproveSerializer
+
+    def post(self, request, *args, **kwargs):
+        pk = kwargs.get('pk')
+        try:
+            ticket = RepairTicket.objects.get(pk=pk, user=request.user)
+        except RepairTicket.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Repair ticket not found.',
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        if ticket.status != 'awaiting_approval':
+            return Response({
+                'success': False,
+                'message': 'Ticket is not awaiting approval.',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        action = serializer.validated_data['action']
+        notes = serializer.validated_data.get('notes', '')
+
+        success, message = RepairTicketService.customer_approve(ticket, action, notes)
+
+        if not success:
+            return Response({
+                'success': False,
+                'message': message,
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         detail = RepairTicketDetailSerializer(ticket)
         return Response({

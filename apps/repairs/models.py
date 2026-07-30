@@ -27,6 +27,7 @@ class RepairTicket(TimeStampedModel):
         ('accepted', 'Accepted'),
         ('rejected', 'Rejected'),
         ('device_received', 'Device Received'),
+        ('awaiting_approval', 'Awaiting Approval'),
         ('inspection', 'Inspection'),
         ('waiting_parts', 'Waiting for Parts'),
         ('repair_in_progress', 'Repair In Progress'),
@@ -64,6 +65,9 @@ class RepairTicket(TimeStampedModel):
     serial_number = models.CharField(max_length=100, blank=True, default='')
     device_color = models.CharField(max_length=50, blank=True, default='')
     warranty_status = models.CharField(max_length=20, default='unknown')
+    repair_reason = models.TextField(blank=True, default='')
+    repair_charge = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    customer_approved = models.BooleanField(default=False)
 
     issue_category = models.CharField(max_length=50)
     problem_description = models.TextField()

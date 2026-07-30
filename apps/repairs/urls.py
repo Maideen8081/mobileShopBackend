@@ -26,6 +26,9 @@ urlpatterns = [
     path('<int:pk>/status/', views.RepairTicketStatusUpdateAPIView.as_view(), name='repair-ticket-status'),
     path('<int:pk>/assign-technician/', views.RepairTicketAssignTechnicianAPIView.as_view(), name='repair-ticket-assign-technician'),
 
+    # Customer approval
+    path('<int:pk>/customer-approve/', views.RepairTicketCustomerApproveAPIView.as_view(), name='repair-ticket-customer-approve'),
+
     # Notes
     path('<int:pk>/notes/', views.RepairNoteListAPIView.as_view(), name='repair-note-list'),
     path('<int:pk>/notes/create/', views.RepairNoteCreateAPIView.as_view(), name='repair-note-create'),

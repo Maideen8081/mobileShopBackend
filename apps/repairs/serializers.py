@@ -211,6 +211,7 @@ class RepairTicketListSerializer(serializers.ModelSerializer):
             'issue_category', 'problem_description',
             'priority', 'status', 'status_label',
             'assigned_technician', 'estimated_cost', 'estimated_completion_days',
+            'repair_reason', 'repair_charge',
             'photo_count', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'ticket_number', 'created_at', 'updated_at']
@@ -238,14 +239,15 @@ class RepairTicketDetailSerializer(serializers.ModelSerializer):
             'device_brand', 'device_model',
             'imei_number', 'serial_number', 'device_color', 'warranty_status',
             'issue_category', 'problem_description',
-            'accessories_submitted', 'device_password',
-            'estimated_cost', 'estimated_completion_days',
-            'assigned_technician', 'priority',
-            'courier_company', 'courier_tracking_number',
-            'courier_pickup_date', 'courier_expected_delivery_date',
-            'status', 'status_label',
-            'photos', 'notes', 'status_history',
-            'created_at', 'updated_at',
+    'accessories_submitted', 'device_password',
+    'estimated_cost', 'estimated_completion_days',
+    'assigned_technician', 'priority',
+    'courier_company', 'courier_tracking_number',
+    'courier_pickup_date', 'courier_expected_delivery_date',
+    'repair_reason', 'repair_charge', 'customer_approved',
+    'status', 'status_label',
+    'photos', 'notes', 'status_history',
+    'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'ticket_number', 'created_at', 'updated_at']
 
@@ -274,6 +276,7 @@ class RepairTicketUpdateSerializer(serializers.ModelSerializer):
             'assigned_technician', 'priority',
             'courier_company', 'courier_tracking_number',
             'courier_pickup_date', 'courier_expected_delivery_date',
+            'repair_reason', 'repair_charge',
             'photos', 'delete_photo_ids',
         ]
         extra_kwargs = {f: {'required': False} for f in [
@@ -333,6 +336,13 @@ class RepairStatusUpdateSerializer(serializers.Serializer):
     status = serializers.CharField(max_length=30)
     notes = serializers.CharField(required=False, default='')
     updated_by = serializers.CharField(required=False, default='Admin')
+    repair_reason = serializers.CharField(required=False, default='')
+    repair_charge = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+
+
+class RepairCustomerApproveSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=['approve', 'decline'])
+    notes = serializers.CharField(required=False, default='')
 
 
 class RepairTicketTechnicianSerializer(serializers.Serializer):
