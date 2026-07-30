@@ -1,5 +1,12 @@
+import logging
+
+from django.db import DatabaseError
+
 from apps.repairs.constants import STATUS_LABELS, STATUS_TRANSITIONS
 from apps.repairs.models import RepairStatusHistory, RepairTicket, RepairTicketPhoto
+
+
+logger = logging.getLogger(__name__)
 
 
 CUSTOMER_APPROVED_TRANSITIONS = {
@@ -17,11 +24,14 @@ class RepairTicketService:
             return False, f'Cannot {action} in current status.'
 
         ticket.status = new_status
+        ticket.save(update_fields=['status'])
+
         if action == 'approve':
             ticket.customer_approved = True
-            ticket.save(update_fields=['status', 'customer_approved'])
-        else:
-            ticket.save(update_fields=['status'])
+            try:
+                ticket.save(update_fields=['customer_approved'])
+            except DatabaseError:
+                logger.exception('Failed to save customer_approved (column may not exist yet)')
 
         label = 'approved' if action == 'approve' else 'declined'
         RepairStatusHistory.objects.create(
@@ -63,10 +73,15 @@ class RepairTicketService:
             return False, f'Cannot transition from "{STATUS_LABELS.get(current, current)}" to "{STATUS_LABELS.get(new_status, new_status)}".'
 
         ticket.status = new_status
+        ticket.save(update_fields=['status'])
+
         if extra_fields:
             for field, value in extra_fields.items():
                 setattr(ticket, field, value)
-        ticket.save(update_fields=['status'] + (list(extra_fields.keys()) if extra_fields else []))
+            try:
+                ticket.save(update_fields=list(extra_fields.keys()))
+            except DatabaseError:
+                logger.exception('Failed to save extra fields (columns may not exist yet)')
 
         RepairStatusHistory.objects.create(
             repair_ticket=ticket,

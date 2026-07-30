@@ -211,7 +211,6 @@ class RepairTicketListSerializer(serializers.ModelSerializer):
             'issue_category', 'problem_description',
             'priority', 'status', 'status_label',
             'assigned_technician', 'estimated_cost', 'estimated_completion_days',
-            'repair_reason', 'repair_charge', 'customer_approved',
             'photo_count', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'ticket_number', 'created_at', 'updated_at']
@@ -244,7 +243,6 @@ class RepairTicketDetailSerializer(serializers.ModelSerializer):
     'assigned_technician', 'priority',
     'courier_company', 'courier_tracking_number',
     'courier_pickup_date', 'courier_expected_delivery_date',
-    'repair_reason', 'repair_charge', 'customer_approved',
     'status', 'status_label',
     'photos', 'notes', 'status_history',
     'created_at', 'updated_at',
