@@ -12,6 +12,8 @@ class RepairTicketService:
             'online_tickets': base.filter(source='online').count(),
             'local_tickets': base.filter(source='local').count(),
             'pending': base.filter(status='pending').count(),
+            'accepted': base.filter(status='accepted').count(),
+            'rejected': base.filter(status='rejected').count(),
             'device_received': base.filter(status='device_received').count(),
             'inspection': base.filter(status='inspection').count(),
             'waiting_parts': base.filter(status='waiting_parts').count(),

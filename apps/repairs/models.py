@@ -24,6 +24,8 @@ class RepairTicket(TimeStampedModel):
     SOURCE_CHOICES = [('online', 'Online'), ('local', 'Local Shop')]
     STATUS_CHOICES = [
         ('pending', 'Pending'),
+        ('accepted', 'Accepted'),
+        ('rejected', 'Rejected'),
         ('device_received', 'Device Received'),
         ('inspection', 'Inspection'),
         ('waiting_parts', 'Waiting for Parts'),

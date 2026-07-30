@@ -1,5 +1,7 @@
 STATUS_TRANSITIONS = {
-    'pending': ['device_received', 'cancelled'],
+    'pending': ['accepted', 'rejected', 'cancelled'],
+    'accepted': ['device_received', 'cancelled'],
+    'rejected': [],
     'device_received': ['inspection', 'cancelled'],
     'inspection': ['waiting_parts', 'repair_in_progress', 'cancelled'],
     'waiting_parts': ['repair_in_progress', 'cancelled'],
@@ -13,6 +15,8 @@ STATUS_TRANSITIONS = {
 
 STATUS_LABELS = {
     'pending': 'Pending',
+    'accepted': 'Accepted',
+    'rejected': 'Rejected',
     'device_received': 'Device Received',
     'inspection': 'Inspection',
     'waiting_parts': 'Waiting for Parts',
