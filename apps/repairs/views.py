@@ -252,7 +252,10 @@ class RepairTicketCreateAPIView(CreateAPIView):
         try:
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
-            ticket = serializer.save()
+            data = serializer.validated_data
+            ticket = serializer.save(
+                user=request.user if request.user.is_authenticated else None,
+            )
 
             RepairTicketService.create_ticket_with_history(ticket, updated_by='Admin')
 
