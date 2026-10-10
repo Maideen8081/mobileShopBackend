@@ -3,6 +3,28 @@ import django.db.models.deletion
 from django.conf import settings
 
 
+def _drop_legacy_repair_tables(apps, schema_editor):
+    """Drop the pre-rebuild repair tables.
+
+    These statements use PostgreSQL-only syntax (``DROP TABLE ... CASCADE``)
+    and are only required when upgrading an existing PostgreSQL database. On
+    other backends (e.g. the SQLite database used by the test suite) the legacy
+    tables never exist, so this is a no-op.
+    """
+    if schema_editor.connection.vendor != 'postgresql':
+        return
+    schema_editor.execute("DELETE FROM django_migrations WHERE app='repairs';")
+    for table in (
+        'repair_notes',
+        'repair_ticket_photos',
+        'repair_tickets',
+        'repair_services',
+        'repair_status_history',
+        'notifications',
+    ):
+        schema_editor.execute(f'DROP TABLE IF EXISTS {table} CASCADE;')
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -10,23 +32,11 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # Step 1: Remove ALL old repair migration records from django_migrations
-        migrations.RunSQL(
-            sql="DELETE FROM django_migrations WHERE app='repairs';",
-            reverse_sql="SELECT 1;",
-        ),
-
-        # Step 2: Drop old repair tables (they have old schema without source, service_id, etc.)
-        migrations.RunSQL(
-            sql="""
-                DROP TABLE IF EXISTS repair_notes CASCADE;
-                DROP TABLE IF EXISTS repair_ticket_photos CASCADE;
-                DROP TABLE IF EXISTS repair_tickets CASCADE;
-                DROP TABLE IF EXISTS repair_services CASCADE;
-                DROP TABLE IF EXISTS repair_status_history CASCADE;
-                DROP TABLE IF EXISTS notifications CASCADE;
-            """,
-            reverse_sql="SELECT 1;",
+        # Step 1 + 2: Remove legacy repair migration records and drop the old
+        # repair tables (PostgreSQL only; no-op on other backends).
+        migrations.RunPython(
+            _drop_legacy_repair_tables,
+            reverse_code=migrations.RunPython.noop,
         ),
 
         # Step 3: Create RepairService

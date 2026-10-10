@@ -1,6 +1,8 @@
 import re
 from django.contrib.auth import authenticate
 from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import default_token_generator
+from django.utils import timezone
 from rest_framework import serializers
 from .models import Address, Customer
 
@@ -122,7 +124,9 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         mobile = validated_data.pop('mobile', '')
         password = validated_data.pop('password')
-        user = User(**validated_data)
+        # Role is always forced to customer — clients can never self-assign an
+        # admin role through registration or any request body.
+        user = User(**validated_data, role=User.ROLE_CUSTOMER)
         user.set_password(password)
         user.save()
 
@@ -135,19 +139,37 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
+        from apps.common.security import account_is_locked, record_login_failure
+
         email = attrs.get('email', '').strip().lower()
         password = attrs.get('password')
 
         if not email:
             raise serializers.ValidationError('Email is required.')
 
-        user = authenticate(email=email, password=password)
-        if not user:
-            raise serializers.ValidationError('Invalid email or password.')
-        if not user.is_active:
-            raise serializers.ValidationError('User account is disabled.')
-        attrs['user'] = user
-        return attrs
+        try:
+            user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            user = None
+
+        # Generic errors: do not disclose whether an email exists.
+        generic_error = 'Invalid email or password.'
+
+        if user is not None:
+            if account_is_locked(user):
+                raise serializers.ValidationError(
+                    'Account temporarily locked. Please try again later.'
+                )
+            if user.check_password(password) and user.is_active:
+                attrs['user'] = user
+                return attrs
+            record_login_failure(user)
+            if user.failed_login_attempts == 0 and user.locked_until:
+                raise serializers.ValidationError(
+                    'Account temporarily locked. Please try again later.'
+                )
+
+        raise serializers.ValidationError(generic_error)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -160,6 +182,8 @@ class UserSerializer(serializers.ModelSerializer):
     state = serializers.CharField(source='customer_profile.state', required=False)
     pincode = serializers.CharField(source='customer_profile.pincode', required=False)
     loyalty_points = serializers.IntegerField(source='customer_profile.loyalty_points', read_only=True)
+    role = serializers.CharField(read_only=True)
+    is_admin = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -167,8 +191,9 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'customer_id', 'email', 'first_name', 'last_name',
             'mobile', 'date_of_birth', 'gender', 'address', 'city', 'state',
             'pincode', 'loyalty_points', 'is_active', 'date_joined',
+            'role', 'is_admin',
         ]
-        read_only_fields = ['id', 'is_active', 'date_joined', 'loyalty_points']
+        read_only_fields = ['id', 'is_active', 'date_joined', 'loyalty_points', 'role', 'is_admin']
 
     def get_mobile(self, obj):
         mobile = obj.mobile_number
@@ -179,7 +204,13 @@ class UserSerializer(serializers.ModelSerializer):
                 mobile = ''
         return mobile
 
+    def get_is_admin(self, obj):
+        return bool(obj.is_admin)
+
     def update(self, instance, validated_data):
+        # Role/privilege escalation is impossible through the profile endpoint;
+        # ``role`` and ``is_admin`` are read-only and never land in validated_data.
+        validated_data.pop('role', None)
         customer_data = validated_data.pop('customer_profile', {})
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -210,4 +241,47 @@ class ChangePasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError({'confirm_password': 'New passwords do not match.'})
         if attrs['old_password'] == attrs['new_password']:
             raise serializers.ValidationError({'new_password': 'New password cannot be the same as current password.'})
+        return attrs
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(min_length=8, write_only=True)
+    confirm_password = serializers.CharField(min_length=8, write_only=True)
+
+    def validate(self, attrs):
+        from django.utils.http import urlsafe_base64_decode
+        from apps.common.models import PasswordResetToken
+
+        if attrs['new_password'] != attrs['confirm_password']:
+            raise serializers.ValidationError({'confirm_password': 'Passwords do not match.'})
+
+        try:
+            uid = urlsafe_base64_decode(attrs['uid']).decode()
+            user = User.objects.get(pk=uid, is_active=True)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist, UnicodeDecodeError):
+            raise serializers.ValidationError('The reset link is invalid or has expired.')
+
+        if not default_token_generator.check_token(user, attrs['token']):
+            raise serializers.ValidationError('The reset link is invalid or has expired.')
+
+        reset = PasswordResetToken.objects.filter(
+            user=user,
+            token_hash=PasswordResetToken.make_hash(attrs['token']),
+            used_at__isnull=True,
+            expires_at__gt=timezone.now(),
+        ).order_by('-created_at').first()
+        if reset is None:
+            raise serializers.ValidationError('The reset link has already been used or has expired.')
+
+        attrs['user'] = user
+        attrs['reset'] = reset
         return attrs

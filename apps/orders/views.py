@@ -1,15 +1,17 @@
 from decouple import config
+from decimal import Decimal, ROUND_HALF_UP
 import razorpay
 from django.db import transaction
 from rest_framework import status
 from rest_framework.generics import GenericAPIView, ListAPIView, RetrieveAPIView
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.cart.models import Cart, CartItem
+from apps.common.permissions import IsAdminUser
 from apps.common.serializers import get_absolute_image_url
 from apps.customers.models import Address
-from apps.products.models import ProductVariant, VariantImage
+from apps.products.models import Product, ProductVariant, VariantImage
 from .models import Coupon, Order, OrderItem
 from .serializers import (
     CouponApplySerializer,
@@ -342,6 +344,9 @@ class SimpleCreateOrderAPIView(GenericAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = SimpleCreateOrderSerializer
 
+    def _money(self, value):
+        return Decimal(value).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
     @transaction.atomic
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -354,49 +359,95 @@ class SimpleCreateOrderAPIView(GenericAPIView):
         shipping_addr = {}
         delivery_address_id = data.get('delivery_address_id')
         if delivery_address_id:
-            try:
-                address_obj = Address.objects.get(id=delivery_address_id, user=user)
-                shipping_addr = {
-                    'name': address_obj.full_name,
-                    'phone': address_obj.mobile_number,
-                    'address_line1': address_obj.house_number,
-                    'address_line2': address_obj.street_address,
-                    'landmark': address_obj.landmark,
-                    'city': address_obj.city,
-                    'state': address_obj.state,
-                    'pincode': address_obj.pincode,
-                    'country': address_obj.country,
-                }
-            except Address.DoesNotExist:
+            address_obj = Address.objects.filter(id=delivery_address_id, user=user).first()
+            if address_obj is None:
                 return Response({
                     'success': False,
                     'message': 'Address not found.',
                 }, status=status.HTTP_404_NOT_FOUND)
+            shipping_addr = {
+                'name': address_obj.full_name,
+                'phone': address_obj.mobile_number,
+                'address_line1': address_obj.house_number,
+                'address_line2': address_obj.street_address,
+                'landmark': address_obj.landmark,
+                'city': address_obj.city,
+                'state': address_obj.state,
+                'pincode': address_obj.pincode,
+                'country': address_obj.country,
+            }
 
         payment_method = data.get('payment_method', 'card')
-        payment_status = 'paid' if payment_method != 'cod' else 'pending'
+        payment_status = 'pending' if payment_method == 'cod' else 'paid'
 
-        discount_amount = data.get('discount', 0)
+        # ------------------------------------------------------------------
+        # Server-side pricing. Client-supplied prices, totals and discounts are
+        # never trusted; line totals are derived from the variant's current price.
+        # ------------------------------------------------------------------
+        subtotal = Decimal('0.00')
+        prepared_items = []
+        for item in data['items']:
+            product = Product.objects.select_related().filter(
+                id=item['product_id'], is_published=True
+            ).first()
+            if product is None:
+                return Response({
+                    'success': False,
+                    'message': f'Product {item["product_id"]} is not available.',
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            if item.get('variant_id'):
+                variant = ProductVariant.objects.select_related('product').select_for_update().filter(
+                    id=item['variant_id'], product_id=product.id, is_active=True
+                ).first()
+                if variant is None:
+                    return Response({
+                        'success': False,
+                        'message': f'Variant {item["variant_id"]} is not available.',
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                variant = ProductVariant.objects.select_related('product').select_for_update().filter(
+                    product_id=product.id, is_active=True
+                ).order_by('id').first()
+                if variant is None:
+                    return Response({
+                        'success': False,
+                        'message': f'{product.product_name} is not available.',
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+            if item['quantity'] > variant.stock_quantity:
+                return Response({
+                    'success': False,
+                    'message': f'Insufficient stock for {product.product_name}. '
+                               f'Only {variant.stock_quantity} available.',
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            unit_price = self._money(variant.price)
+            line_total = self._money(unit_price * item['quantity'])
+            subtotal += line_total
+            prepared_items.append((variant, product, item, unit_price, line_total))
+
+        subtotal = self._money(subtotal)
+        tax = self._money(subtotal * Decimal('0.18'))
+        shipping_charge = Decimal('0.00') if subtotal >= Decimal('500.00') else Decimal('49.00')
+
+        discount_amount = Decimal('0.00')
         coupon_code = data.get('coupon_code', '')
         coupon_obj = None
-
         if coupon_code:
-            try:
-                coupon_obj = Coupon.objects.get(code__iexact=coupon_code.strip())
-                if coupon_obj.is_valid and data['subtotal'] >= coupon_obj.minimum_amount:
-                    if coupon_obj.discount_type == 'percentage':
-                        coupon_discount = (coupon_obj.discount_value / 100) * data['subtotal']
-                    else:
-                        coupon_discount = coupon_obj.discount_value
-                    if coupon_discount > data['subtotal']:
-                        coupon_discount = data['subtotal']
-                    discount_amount = coupon_discount
-            except Coupon.DoesNotExist:
-                pass
+            coupon_obj = Coupon.objects.filter(code__iexact=coupon_code.strip()).first()
+            if coupon_obj and coupon_obj.is_valid and subtotal >= coupon_obj.minimum_amount:
+                if coupon_obj.discount_type == 'percentage':
+                    coupon_discount = coupon_obj.discount_value / 100 * subtotal
+                else:
+                    coupon_discount = coupon_obj.discount_value
+                discount_amount = self._money(min(coupon_discount, subtotal))
+            else:
+                coupon_obj = None
 
-        grand_total = data['subtotal'] + data['tax'] + data['shipping'] - discount_amount
+        grand_total = self._money(subtotal + tax + shipping_charge - discount_amount)
         if grand_total < 0:
-            grand_total = 0
+            grand_total = Decimal('0.00')
 
         order = Order.objects.create(
             user=user,
@@ -405,28 +456,31 @@ class SimpleCreateOrderAPIView(GenericAPIView):
             payment_method=payment_method,
             payment_status=payment_status,
             order_status='order_placed',
-            subtotal=data['subtotal'],
-            tax=data['tax'],
-            shipping_charge=data['shipping'],
+            subtotal=subtotal,
+            tax=tax,
+            shipping_charge=shipping_charge,
             discount=discount_amount,
             grand_total=grand_total,
             coupon=coupon_obj,
             coupon_code=coupon_code,
         )
 
-        for item_data in data['items']:
+        for variant, product, item, unit_price, line_total in prepared_items:
+            variant.stock_quantity -= item['quantity']
+            variant.save(update_fields=['stock_quantity'])
+
             OrderItem.objects.create(
                 order=order,
-                product_id=item_data['product_id'],
-                variant_id=item_data.get('variant_id'),
-                product_name=item_data['name'],
-                image=item_data.get('image', ''),
-                selected_color=item_data.get('color', ''),
-                selected_ram=item_data.get('ram', ''),
-                selected_storage=item_data.get('storage', ''),
-                quantity=item_data['quantity'],
-                price=item_data['price'],
-                total_price=item_data['price'] * item_data['quantity'],
+                product=product,
+                variant=variant,
+                product_name=product.product_name,
+                image=item.get('image', ''),
+                selected_color=item.get('color', ''),
+                selected_ram=item.get('ram', ''),
+                selected_storage=item.get('storage', ''),
+                quantity=item['quantity'],
+                price=unit_price,
+                total_price=line_total,
             )
 
         if coupon_obj:
@@ -441,14 +495,11 @@ class SimpleCreateOrderAPIView(GenericAPIView):
 
 
 class AllOrdersListAPIView(GenericAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminUser]
     serializer_class = SimpleOrderSerializer
 
     def get(self, request, *args, **kwargs):
-        if request.user.is_staff or request.user.is_superuser:
-            queryset = Order.objects.all().prefetch_related('items').order_by('-created_at')
-        else:
-            queryset = Order.objects.filter(user=request.user).prefetch_related('items').order_by('-created_at')
+        queryset = Order.objects.all().prefetch_related('items').order_by('-created_at')
 
         search = request.query_params.get('search', '').strip()
         order_status = request.query_params.get('status', '').strip()
@@ -476,12 +527,12 @@ class AllOrdersListAPIView(GenericAPIView):
 
 
 class OrderDetailByNumberAPIView(GenericAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminUser]
     serializer_class = SimpleOrderSerializer
 
     def get(self, request, order_id, *args, **kwargs):
         try:
-            order = Order.objects.prefetch_related('items').get(id=order_id, user=request.user)
+            order = Order.objects.prefetch_related('items').get(id=order_id)
         except Order.DoesNotExist:
             return Response({
                 'success': False,
@@ -496,7 +547,7 @@ class OrderDetailByNumberAPIView(GenericAPIView):
 
 
 class UpdateOrderStatusAPIView(GenericAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
 
     def put(self, request, order_number, *args, **kwargs):
         try:

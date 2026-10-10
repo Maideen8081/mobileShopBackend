@@ -3,7 +3,10 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status, filters
 from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView, UpdateAPIView, DestroyAPIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+
+from apps.common.permissions import IsAdminUser
 
 from .models import Product, ProductVariant, VariantImage
 from .serializers import (
@@ -19,6 +22,7 @@ from rest_framework.pagination import PageNumberPagination
 
 class ProductListAPIView(ListAPIView):
     serializer_class = ProductListSerializer
+    permission_classes = [AllowAny]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['product_name', 'brand', 'model_number']
     ordering_fields = ['product_name', 'created_at', 'brand']
@@ -99,6 +103,7 @@ class ProductCreateAPIView(CreateAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductCreateSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+    permission_classes = [IsAdminUser]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -159,6 +164,7 @@ class ProductDetailAPIView(RetrieveAPIView):
         'features', 'care_instructions', 'variants__images'
     )
     serializer_class = ProductDetailSerializer
+    permission_classes = [AllowAny]
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -173,6 +179,7 @@ class ProductUpdateAPIView(UpdateAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductUpdateSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+    permission_classes = [IsAdminUser]
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -232,6 +239,7 @@ class ProductUpdateAPIView(UpdateAPIView):
 class ProductDeleteAPIView(DestroyAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductDetailSerializer
+    permission_classes = [IsAdminUser]
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -245,6 +253,7 @@ class ProductDeleteAPIView(DestroyAPIView):
 class ProductDashboardCountsAPIView(ListAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductListSerializer
+    permission_classes = [IsAdminUser]
 
     def list(self, request, *args, **kwargs):
         total = Product.objects.count()
@@ -274,6 +283,7 @@ class ProductDashboardCountsAPIView(ListAPIView):
 
 class ProductSearchAPIView(ListAPIView):
     serializer_class = ProductListSerializer
+    permission_classes = [AllowAny]
 
     def get_queryset(self):
         query = self.request.query_params.get('query', '')
@@ -301,6 +311,7 @@ class ProductSearchAPIView(ListAPIView):
 
 class LowStockProductsAPIView(ListAPIView):
     serializer_class = ProductListSerializer
+    permission_classes = [IsAdminUser]
 
     def get_queryset(self):
         low_stock_variant_ids = ProductVariant.objects.filter(
@@ -329,6 +340,7 @@ class VariantImageUploadAPIView(CreateAPIView):
     queryset = VariantImage.objects.all()
     serializer_class = VariantImageSerializer
     parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAdminUser]
 
     def create(self, request, *args, **kwargs):
         variant_id = kwargs.get('variant_pk')
@@ -372,6 +384,7 @@ class VariantImageUploadAPIView(CreateAPIView):
 class VariantImageDeleteAPIView(DestroyAPIView):
     queryset = VariantImage.objects.all()
     serializer_class = VariantImageSerializer
+    permission_classes = [IsAdminUser]
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()

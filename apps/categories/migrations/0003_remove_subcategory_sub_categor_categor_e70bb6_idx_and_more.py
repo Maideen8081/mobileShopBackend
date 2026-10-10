@@ -10,10 +10,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RemoveIndex(
-            model_name='subcategory',
-            name='sub_categor_categor_e70bb6_idx',
-        ),
         migrations.RenameIndex(
             model_name='category',
             new_name='categories_status_dda6e6_idx',

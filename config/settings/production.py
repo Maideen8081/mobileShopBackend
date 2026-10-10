@@ -22,7 +22,22 @@ CORS_ALLOWED_ORIGINS = [
     for origin in config(
         "CORS_ALLOWED_ORIGINS",
         default="https://mobile-shop-frontend-delta.vercel.app"
-    ).split(",")
+    ).split(",") if origin.strip()
+]
+
+# The SPA is served from a different site than the API, so session/CSRF cookies
+# must be Secure + SameSite=None, and the frontend origin must be trusted for
+# CSRF-protected unsafe requests.
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_SAMESITE = 'None'
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in config(
+        "CSRF_TRUSTED_ORIGINS",
+        default="https://mobile-shop-frontend-delta.vercel.app"
+    ).split(",") if origin.strip()
 ]
 
 SECURE_SSL_REDIRECT = True

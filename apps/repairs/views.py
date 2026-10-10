@@ -15,6 +15,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from apps.common.permissions import IsAdminUser
 from apps.repairs.models import (
     Notification,
     RepairNote,
@@ -183,7 +184,7 @@ class RepairMyTicketDetailAPIView(RetrieveAPIView):
 
 
 class RepairTicketListAPIView(ListAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     serializer_class = RepairTicketListSerializer
     search_fields = [
         'ticket_number', 'customer_name', 'mobile_number',
@@ -243,7 +244,7 @@ class RepairTicketListAPIView(ListAPIView):
 
 
 class RepairTicketCreateAPIView(CreateAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     queryset = RepairTicket.objects.all()
     serializer_class = RepairTicketCreateSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -282,7 +283,7 @@ class RepairTicketCreateAPIView(CreateAPIView):
 
 
 class RepairTicketDetailAPIView(RetrieveAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     queryset = RepairTicket.objects.select_related('service').prefetch_related('photos', 'notes', 'status_history').all()
     serializer_class = RepairTicketDetailSerializer
 
@@ -308,7 +309,7 @@ class RepairTicketDetailAPIView(RetrieveAPIView):
 
 
 class RepairTicketUpdateAPIView(UpdateAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     queryset = RepairTicket.objects.prefetch_related('photos').all()
     serializer_class = RepairTicketUpdateSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -355,7 +356,7 @@ class RepairTicketUpdateAPIView(UpdateAPIView):
 
 
 class RepairTicketDeleteAPIView(DestroyAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     queryset = RepairTicket.objects.all()
 
     def destroy(self, request, *args, **kwargs):
@@ -381,7 +382,7 @@ class RepairTicketDeleteAPIView(DestroyAPIView):
 
 
 class RepairTicketStatusUpdateAPIView(GenericAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     serializer_class = RepairStatusUpdateSerializer
 
     def put(self, request, *args, **kwargs):
@@ -473,7 +474,7 @@ class RepairTicketCustomerApproveAPIView(GenericAPIView):
 
 
 class RepairTicketAssignTechnicianAPIView(GenericAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     serializer_class = RepairTicketTechnicianSerializer
 
     def put(self, request, *args, **kwargs):
@@ -503,7 +504,7 @@ class RepairTicketAssignTechnicianAPIView(GenericAPIView):
 
 
 class RepairDashboardCountsAPIView(GenericAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
 
     def get(self, request, *args, **kwargs):
         counts = RepairTicketService.get_dashboard_counts()
@@ -514,7 +515,7 @@ class RepairDashboardCountsAPIView(GenericAPIView):
 
 
 class RepairNoteListAPIView(ListAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     serializer_class = RepairNoteListSerializer
 
     def get_queryset(self):
@@ -538,7 +539,7 @@ class RepairNoteListAPIView(ListAPIView):
 
 
 class RepairNoteCreateAPIView(CreateAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     serializer_class = RepairNoteCreateSerializer
 
     def create(self, request, *args, **kwargs):

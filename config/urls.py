@@ -1,10 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
 from django.http import HttpResponseRedirect
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
 from django.conf import settings
 from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
@@ -30,8 +26,7 @@ api_urlpatterns = [
     path('reviews/', include('apps.reviews.urls')),
     path('', include('apps.customers.urls')),
     path('', include('apps.orders.urls')),
-    path('token/', TokenObtainPairView.as_view(), name='token-obtain'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
+    path('admin/auth/', include('apps.customers.admin_urls')),
 ]
 
 urlpatterns = [

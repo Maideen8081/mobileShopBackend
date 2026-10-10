@@ -8,7 +8,7 @@ from rest_framework.generics import (
     DestroyAPIView,
 )
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
 from .models import Review, ReviewImage
@@ -22,6 +22,7 @@ from .serializers import (
 
 class ReviewListAPIView(ListAPIView):
     serializer_class = ReviewSerializer
+    permission_classes = [AllowAny]
 
     def get_queryset(self):
         qs = Review.objects.select_related('user', 'product').prefetch_related('images')
@@ -74,6 +75,7 @@ class ReviewCreateAPIView(CreateAPIView):
 class ReviewDetailAPIView(RetrieveAPIView):
     queryset = Review.objects.select_related('user', 'product').prefetch_related('images')
     serializer_class = ReviewSerializer
+    permission_classes = [AllowAny]
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()

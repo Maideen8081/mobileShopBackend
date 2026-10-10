@@ -8,6 +8,13 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # The old index name referenced the pre-rename field column. It must be
+        # dropped before the field rename rebuilds the table on SQLite, and it is
+        # removed on the final model state anyway.
+        migrations.RemoveIndex(
+            model_name='subcategory',
+            name='sub_categor_categor_e70bb6_idx',
+        ),
         migrations.RenameField(
             model_name='subcategory',
             old_name='category',

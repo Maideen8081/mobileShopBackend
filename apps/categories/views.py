@@ -2,8 +2,10 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status, filters
 from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveUpdateDestroyAPIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.common.permissions import IsAdminUser, IsAdminOrReadOnly
 from .models import Category, SubCategory
 from .serializers import (
     CategoryCreateSerializer,
@@ -21,6 +23,7 @@ from apps.common.serializers import get_absolute_image_url
 class CategoryListAPIView(ListAPIView):
     queryset = Category.objects.all()
     serializer_class = CategoryListSerializer
+    permission_classes = [AllowAny]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['category_name']
     ordering_fields = ['category_name', 'created_at']
@@ -45,6 +48,7 @@ class CategoryCreateAPIView(CreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategoryCreateSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+    permission_classes = [IsAdminUser]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -67,6 +71,7 @@ class CategoryCreateAPIView(CreateAPIView):
 class CategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Category.objects.all()
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         from django.db.models import Count
@@ -120,6 +125,7 @@ class CategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
 class CategoryDashboardCountsAPIView(ListAPIView):
     queryset = Category.objects.all()
     serializer_class = CategoryListSerializer
+    permission_classes = [IsAdminUser]
 
     def list(self, request, *args, **kwargs):
         counts = CategoryService.get_dashboard_counts()
@@ -131,6 +137,7 @@ class CategoryDropdownAPIView(ListAPIView):
     queryset = Category.objects.filter(status='active')
     serializer_class = CategoryDropdownSerializer
     pagination_class = None
+    permission_classes = [AllowAny]
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
@@ -142,6 +149,7 @@ class CategoryDropdownAPIView(ListAPIView):
 class SubCategoryListAPIView(ListAPIView):
     queryset = SubCategory.objects.select_related('parent_category').all()
     serializer_class = SubCategorySerializer
+    permission_classes = [AllowAny]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['sub_category_name']
     ordering_fields = ['sub_category_name', 'created_at']
@@ -160,6 +168,7 @@ class SubCategoryListAPIView(ListAPIView):
 class SubCategoryCreateAPIView(CreateAPIView):
     queryset = SubCategory.objects.all()
     serializer_class = SubCategorySerializer
+    permission_classes = [IsAdminUser]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
