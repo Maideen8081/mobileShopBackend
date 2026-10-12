@@ -24,6 +24,7 @@ api_urlpatterns = [
     path('repairs/', include('apps.repairs.urls')),
     path('cart/', include('apps.cart.urls')),
     path('reviews/', include('apps.reviews.urls')),
+    path('chat/', include('apps.chat.urls')),
     path('', include('apps.customers.urls')),
     path('', include('apps.orders.urls')),
     path('admin/auth/', include('apps.customers.admin_urls')),

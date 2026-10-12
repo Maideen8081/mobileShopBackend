@@ -18,13 +18,26 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 
+def _validation_error_response(errors):
+    """Flatten DRF validation errors into the {success, message} shape the app reads."""
+    first = errors
+    while isinstance(first, (dict, list)) and first:
+        first = next(iter(first.values())) if isinstance(first, dict) else first[0]
+    return Response({
+        'success': False,
+        'message': str(first) if first else 'Invalid request.',
+        'errors': errors,
+    }, status=status.HTTP_400_BAD_REQUEST)
+
+
 class CartAddAPIView(GenericAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = AddToCartSerializer
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            return _validation_error_response(serializer.errors)
 
         user = request.user
         variant = serializer.validated_data['variant']
@@ -119,7 +132,8 @@ class CartUpdateQuantityAPIView(GenericAPIView):
 
     def put(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            return _validation_error_response(serializer.errors)
 
         cart_item_id = serializer.validated_data['cart_item_id']
         action = serializer.validated_data['action']

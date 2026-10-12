@@ -81,7 +81,9 @@ class CartSerializer(serializers.ModelSerializer):
 
 class AddToCartSerializer(serializers.Serializer):
     product_id = serializers.IntegerField()
-    variation_id = serializers.IntegerField()
+    # Optional: product listing cards don't know variant ids, so a missing/0
+    # variation_id falls back to the product's default variant.
+    variation_id = serializers.IntegerField(required=False, allow_null=True, default=None)
     quantity = serializers.IntegerField(min_value=1, default=1)
 
     def validate_product_id(self, value):
@@ -90,14 +92,19 @@ class AddToCartSerializer(serializers.Serializer):
         return value
 
     def validate(self, data):
-        try:
-            variant = ProductVariant.objects.get(
-                id=data['variation_id'],
-                product_id=data['product_id'],
-                is_active=True,
+        active_variants = ProductVariant.objects.filter(product_id=data['product_id'], is_active=True)
+        if data.get('variation_id'):
+            variant = active_variants.filter(id=data['variation_id']).first()
+            if variant is None:
+                raise serializers.ValidationError('Product variation not found.')
+        else:
+            # Cheapest in-stock variant, matching the min_price shown on listings.
+            variant = (
+                active_variants.filter(stock_quantity__gt=0).order_by('price', 'id').first()
+                or active_variants.order_by('price', 'id').first()
             )
-        except ProductVariant.DoesNotExist:
-            raise serializers.ValidationError('Product variation not found.')
+            if variant is None:
+                raise serializers.ValidationError('This product is currently unavailable.')
 
         if variant.stock_quantity < 1:
             raise serializers.ValidationError('This product is out of stock.')

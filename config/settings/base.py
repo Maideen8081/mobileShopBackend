@@ -37,6 +37,7 @@ LOCAL_APPS = [
     'apps.cart',
     'apps.orders',
     'apps.reviews',
+    'apps.chat',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -237,6 +238,12 @@ REST_FRAMEWORK = {
 
 RAZORPAY_KEY_ID = config('RAZORPAY_KEY_ID', default='')
 RAZORPAY_SECRET = config('RAZORPAY_SECRET', default='')
+
+# AI chat assistant. When AI_CHAT_API_KEY is empty the chat endpoint falls back
+# to a deterministic rule-based engine, so the widget works with no provider.
+AI_CHAT_API_KEY = config('AI_CHAT_API_KEY', default='')
+AI_CHAT_BASE_URL = config('AI_CHAT_BASE_URL', default='https://api.openai.com/v1')
+AI_CHAT_MODEL = config('AI_CHAT_MODEL', default='gpt-4o-mini')
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=config('JWT_ACCESS_DAYS', default=1, cast=int)),

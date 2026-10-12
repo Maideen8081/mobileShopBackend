@@ -5,6 +5,7 @@ from django.core.mail import send_mail
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.utils.http import urlsafe_base64_encode
+from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.generics import GenericAPIView, ListAPIView, RetrieveUpdateAPIView
@@ -49,7 +50,9 @@ class CSRFTokenAPIView(GenericAPIView):
 
     @method_decorator(ensure_csrf_cookie)
     def get(self, request, *args, **kwargs):
-        return Response(_envelope(True, 'CSRF cookie set.'))
+        # The SPA runs on a different site than the API, so it can't read this
+        # cookie via document.cookie; return the token in the body as well.
+        return Response(_envelope(True, 'CSRF cookie set.', data={'csrf_token': get_token(request)}))
 
 
 class RegisterAPIView(GenericAPIView):
