@@ -51,7 +51,7 @@ class AddressCreateSerializer(serializers.ModelSerializer):
     mobile = serializers.CharField(source='mobile_number', required=False)
     alternate_mobile = serializers.CharField(source='alternate_mobile_number', required=False, allow_blank=True)
     address_line1 = serializers.CharField(source='house_number', required=False)
-    address_line2 = serializers.CharField(source='street_address', required=False)
+    address_line2 = serializers.CharField(source='street_address', required=False, allow_blank=True, default='')
     zip_code = serializers.CharField(source='pincode', required=False)
 
     class Meta:
