@@ -1,13 +1,21 @@
 from django.db import models
+from django.db.models import F, Q
+from django.db.models.functions import Length, Lower
+from django.db.models.lookups import GreaterThanOrEqual
+
 from apps.common.models import TimeStampedModel
+from .validators import (
+    BRAND_MIN, LOW_STOCK_ALERT_MAX, MODEL_NUMBER_PATTERN, PRODUCT_NAME_MIN, STOCK_MAX,
+)
 
 
 class Product(TimeStampedModel):
     product_name = models.CharField(max_length=200)
     brand = models.CharField(max_length=100)
     model_number = models.CharField(max_length=100)
-    category = models.ForeignKey('categories.Category', on_delete=models.CASCADE, related_name='products')
-    sub_category = models.ForeignKey('categories.SubCategory', on_delete=models.CASCADE, related_name='products', null=True, blank=True)
+    # PROTECT: deleting a category or sub category must never silently delete its products.
+    category = models.ForeignKey('categories.Category', on_delete=models.PROTECT, related_name='products')
+    sub_category = models.ForeignKey('categories.SubCategory', on_delete=models.PROTECT, related_name='products', null=True, blank=True)
     description = models.TextField(blank=True)
     common_image = models.ImageField(upload_to='products/', null=True, blank=True)
     is_trending = models.BooleanField(default=False)
@@ -28,6 +36,16 @@ class Product(TimeStampedModel):
             models.Index(fields=['is_best_selling']),
             models.Index(fields=['is_refurbished']),
             models.Index(fields=['is_published']),
+        ]
+        constraints = [
+            models.UniqueConstraint(Lower('brand'), Lower('model_number'), name='product_brand_model_unique_ci'),
+            models.CheckConstraint(
+                condition=GreaterThanOrEqual(Length('product_name'), PRODUCT_NAME_MIN), name='product_name_min_length',
+            ),
+            models.CheckConstraint(condition=GreaterThanOrEqual(Length('brand'), BRAND_MIN), name='product_brand_min_length'),
+            models.CheckConstraint(
+                condition=Q(model_number__regex=MODEL_NUMBER_PATTERN.pattern), name='product_model_number_format',
+            ),
         ]
 
     def __str__(self):
@@ -76,10 +94,19 @@ class ProductVariant(TimeStampedModel):
 
     class Meta:
         db_table = 'product_variants'
-        ordering = ('-created_at',)
+        ordering = ('id',)  # the order the admin entered them
         indexes = [
             models.Index(fields=['product']),
             models.Index(fields=['is_active']),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=Q(price__gt=0), name='variant_price_positive'),
+            models.CheckConstraint(
+                condition=Q(discount_price__isnull=True) | (Q(discount_price__gt=0) & Q(discount_price__lt=F('price'))),
+                name='variant_discount_below_price',
+            ),
+            models.CheckConstraint(condition=Q(stock_quantity__lte=STOCK_MAX), name='variant_stock_max'),
+            models.CheckConstraint(condition=Q(low_stock_alert__lte=LOW_STOCK_ALERT_MAX), name='variant_low_stock_alert_max'),
         ]
 
     def __str__(self):

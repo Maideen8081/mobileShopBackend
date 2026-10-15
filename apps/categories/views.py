@@ -1,3 +1,4 @@
+from django.db.models import Count
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, filters
 from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveUpdateDestroyAPIView
@@ -5,18 +6,27 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from apps.common.permissions import IsAdminUser, IsAdminOrReadOnly
+from apps.common.permissions import IsAdminUser, IsAdminOrReadOnly, is_admin_account
 from .models import Category, SubCategory
 from .serializers import (
-    CategoryCreateSerializer,
-    CategoryUpdateSerializer,
+    CategoryWriteSerializer,
     CategoryListSerializer,
     CategoryDetailSerializer,
     CategoryDropdownSerializer,
     SubCategorySerializer,
 )
-from .services import CategoryService
+from .services import CatalogInUseError, CategoryService
 from apps.common.serializers import get_absolute_image_url
+
+
+def _category_payload(category, request):
+    return {
+        'id': category.id,
+        'category_name': category.category_name,
+        'category_image': get_absolute_image_url(category.category_image, request),
+        'status': category.status,
+        'created_at': category.created_at,
+    }
 
 
 @extend_schema(tags=['Categories'])
@@ -30,7 +40,10 @@ class CategoryListAPIView(ListAPIView):
     ordering = ['-created_at']
 
     def get_queryset(self):
-        return CategoryService.get_category_list()
+        qs = CategoryService.get_category_list()
+        if not is_admin_account(self.request.user):
+            qs = qs.filter(status='active')  # inactive categories are hidden from shoppers
+        return qs
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
@@ -46,7 +59,7 @@ class CategoryListAPIView(ListAPIView):
 @extend_schema(tags=['Categories'])
 class CategoryCreateAPIView(CreateAPIView):
     queryset = Category.objects.all()
-    serializer_class = CategoryCreateSerializer
+    serializer_class = CategoryWriteSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     permission_classes = [IsAdminUser]
 
@@ -57,13 +70,7 @@ class CategoryCreateAPIView(CreateAPIView):
         return Response({
             'success': True,
             'message': 'Category created successfully',
-            'data': {
-                'id': category.id,
-                'category_name': category.category_name,
-                'category_image': get_absolute_image_url(category.category_image, request),
-                'status': category.status,
-                'created_at': category.created_at,
-            },
+            'data': _category_payload(category, request),
         }, status=status.HTTP_201_CREATED)
 
 
@@ -74,13 +81,12 @@ class CategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
-        from django.db.models import Count
-        return Category.objects.annotate(sub_category_count=Count('sub_categories'))
+        return CategoryService.annotated_categories()
 
     def get_serializer_class(self):
         if self.request.method == 'GET':
             return CategoryDetailSerializer
-        return CategoryUpdateSerializer
+        return CategoryWriteSerializer
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -91,27 +97,23 @@ class CategoryRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
         })
 
     def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', True)
+        kwargs.pop('partial', None)
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         category = serializer.save()
         return Response({
             'success': True,
             'message': 'Category updated successfully',
-            'data': {
-                'id': category.id,
-                'category_name': category.category_name,
-                'category_image': get_absolute_image_url(category.category_image, request),
-                'status': category.status,
-                'created_at': category.created_at,
-            },
+            'data': _category_payload(category, request),
         })
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        sub_count = instance.sub_categories.count()
-        CategoryService.delete_category(instance)
+        try:
+            sub_count = CategoryService.delete_category(instance)
+        except CatalogInUseError as exc:
+            return Response({'success': False, 'message': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         msg = 'Category deleted successfully'
         if sub_count > 0:
             msg += f' along with {sub_count} sub categor{"y" if sub_count == 1 else "ies"}'
@@ -140,20 +142,31 @@ class CategoryDropdownAPIView(ListAPIView):
     permission_classes = [AllowAny]
 
     def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
+        queryset = CategoryService.get_dropdown_categories()
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
 
+def _annotated_sub_categories():
+    return SubCategory.objects.select_related('parent_category').annotate(product_count=Count('products'))
+
+
 @extend_schema(tags=['Sub Categories'])
 class SubCategoryListAPIView(ListAPIView):
-    queryset = SubCategory.objects.select_related('parent_category').all()
+    queryset = SubCategory.objects.none()
     serializer_class = SubCategorySerializer
     permission_classes = [AllowAny]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['sub_category_name']
     ordering_fields = ['sub_category_name', 'created_at']
-    ordering = ['-created_at']
+    ordering = ['created_at']
+
+    def get_queryset(self):
+        qs = _annotated_sub_categories()
+        parent = self.request.query_params.get('parent_category')
+        if parent and parent.isdigit():
+            qs = qs.filter(parent_category_id=parent)
+        return qs
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
@@ -179,3 +192,35 @@ class SubCategoryCreateAPIView(CreateAPIView):
             'message': 'Sub category created successfully',
             'data': SubCategorySerializer(sub_category).data,
         }, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(tags=['Sub Categories'])
+class SubCategoryDetailAPIView(RetrieveUpdateDestroyAPIView):
+    serializer_class = SubCategorySerializer
+    permission_classes = [IsAdminOrReadOnly]
+
+    def get_queryset(self):
+        return _annotated_sub_categories()
+
+    def retrieve(self, request, *args, **kwargs):
+        return Response({'success': True, 'data': self.get_serializer(self.get_object()).data})
+
+    def update(self, request, *args, **kwargs):
+        kwargs.pop('partial', None)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        sub_category = serializer.save()
+        return Response({
+            'success': True,
+            'message': 'Sub category updated successfully',
+            'data': self.get_serializer(self.get_queryset().get(pk=sub_category.pk)).data,
+        })
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            CategoryService.delete_sub_category(instance)
+        except CatalogInUseError as exc:
+            return Response({'success': False, 'message': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': True, 'message': 'Sub category deleted successfully'})

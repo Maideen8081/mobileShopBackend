@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.db import models
 from django.conf import settings
 from apps.common.models import TimeStampedModel
+from apps.common.pricing import shipping_for, tax_for
 from apps.products.models import Product, ProductVariant, VariantImage
 
 
@@ -24,16 +25,21 @@ class Cart(TimeStampedModel):
         return sum(item.discount_amount for item in self.items.all())
 
     @property
+    def payable_subtotal(self):
+        """Subtotal after product discounts — what tax and shipping apply to."""
+        return self.subtotal - self.discount
+
+    @property
     def tax(self):
-        return self.subtotal * Decimal('0.18')
+        return tax_for(self.payable_subtotal)
 
     @property
     def shipping_charge(self):
-        return 0 if self.subtotal >= 500 else 49
+        return shipping_for(self.payable_subtotal)
 
     @property
     def grand_total(self):
-        return self.subtotal + self.tax + self.shipping_charge - self.discount
+        return self.payable_subtotal + self.tax + self.shipping_charge
 
     @property
     def total_quantity(self):

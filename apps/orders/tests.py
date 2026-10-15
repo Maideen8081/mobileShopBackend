@@ -123,6 +123,37 @@ class SimpleOrderIntegrityTest(OrderSecurityBase):
         self.assertEqual(item.price, Decimal('10000.00'))
         self.assertEqual(item.total_price, Decimal('20000.00'))
 
+    def test_order_charges_the_discount_price(self):
+        self.variant.discount_price = Decimal('8000.00')
+        self.variant.save()
+        self.login_customer()
+        resp = self.client.post(ORDER_CREATE, self._payload(), format='json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+        order = Order.objects.filter(user=self.customer).order_by('-id').first()
+        self.assertEqual(order.items.first().price, Decimal('8000.00'))
+        self.assertEqual(order.subtotal, Decimal('16000.00'))
+        self.assertEqual(order.tax, Decimal('2880.00'))
+        self.assertEqual(order.grand_total, Decimal('18880.00'))
+
+    def test_orders_are_never_marked_paid_without_verified_payment(self):
+        self.login_customer()
+        for method, stored in (('Cash on Delivery', 'cod'), ('cod', 'cod'), ('card', 'card')):
+            resp = self.client.post(ORDER_CREATE, self._payload(payment_method=method), format='json')
+            self.assertEqual(resp.status_code, 201, resp.content)
+            order = Order.objects.filter(user=self.customer).order_by('-id').first()
+            self.assertEqual(order.payment_method, stored)
+            self.assertEqual(order.payment_status, 'pending')
+            self.variant.refresh_from_db()
+            self.variant.stock_quantity = 5
+            self.variant.save()
+
+    def test_unknown_address_is_rejected_with_message(self):
+        self.login_customer()
+        resp = self.client.post(ORDER_CREATE, self._payload(delivery_address_id=999999), format='json')
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.json()['message'], 'Address not found.')
+
     def test_client_discount_is_ignored_without_server_coupon(self):
         self.login_customer()
         resp = self.client.post(ORDER_CREATE, self._payload(discount='4999.99'), format='json')

@@ -4,4 +4,5 @@ from . import views
 urlpatterns = [
     path('', views.SubCategoryListAPIView.as_view(), name='sub-category-list'),
     path('create/', views.SubCategoryCreateAPIView.as_view(), name='sub-category-create'),
+    path('<int:pk>/', views.SubCategoryDetailAPIView.as_view(), name='sub-category-detail'),
 ]
