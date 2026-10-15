@@ -36,7 +36,7 @@ class Address(TimeStampedModel):
     mobile_number = models.CharField(max_length=15)
     alternate_mobile_number = models.CharField(max_length=15, blank=True)
     house_number = models.CharField(max_length=100)
-    street_address = models.CharField(max_length=255)
+    street_address = models.CharField(max_length=255, blank=True)
     landmark = models.CharField(max_length=255, blank=True)
     country = models.CharField(max_length=100, default='India')
     state = models.CharField(max_length=100)

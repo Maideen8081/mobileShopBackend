@@ -52,7 +52,7 @@ class AddressCreateSerializer(serializers.ModelSerializer):
     alternate_mobile = serializers.CharField(source='alternate_mobile_number', required=False, allow_blank=True)
     address_line1 = serializers.CharField(source='house_number', required=False)
     # Optional in the app's address forms (area / locality).
-    address_line2 = serializers.CharField(source='street_address', required=False, allow_blank=True)
+    address_line2 = serializers.CharField(source='street_address', required=False, allow_blank=True, default='')
     zip_code = serializers.CharField(source='pincode', required=False)
 
     class Meta:
