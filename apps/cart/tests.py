@@ -143,3 +143,40 @@ class CartAPITests(TestCase):
         self.assertEqual(Decimal(data['tax']), Decimal('3240.00'))
         self.assertEqual(Decimal(data['shipping_charge']), Decimal('0.00'))
         self.assertEqual(Decimal(data['grand_total']), Decimal('21240.00'))
+
+
+CART_ADD_BULK = '/api/v1/cart/add-bulk/'
+
+
+class CartBulkAddTests(TestCase):
+    setUp = CartAPITests.setUp
+
+    def test_bulk_add_returns_cart_and_reports_failures(self):
+        other = Product.objects.create(
+            product_name='Nova Buds', brand='Nova', model_number='NB1', category=self.category,
+        )
+        ProductVariant.objects.create(
+            product=other, variant_name='Std', color='White', ram_size='0', storage_size='0',
+            price=Decimal('1500.00'), stock_quantity=0,
+        )
+        resp = self.client.post(CART_ADD_BULK, {'items': [
+            {'product_id': self.product.id, 'variation_id': self.cheap.id, 'quantity': 1},
+            {'product_id': other.id, 'quantity': 1},
+            {'product_id': 999999, 'quantity': 1},
+        ]}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body['added'], [self.product.id])
+        self.assertEqual({f['product_id'] for f in body['failed']}, {other.id, 999999})
+        self.assertTrue(all(f['message'] for f in body['failed']))
+        self.assertEqual(len(body['data']['products']), 1)
+        self.assertEqual(CartItem.objects.filter(cart__user=self.user).count(), 1)
+
+    def test_bulk_add_rejects_bad_payload(self):
+        self.assertEqual(self.client.post(CART_ADD_BULK, {'items': []}, format='json').status_code, 400)
+        self.assertEqual(self.client.post(CART_ADD_BULK, {'items': 'x'}, format='json').status_code, 400)
+
+    def test_bulk_add_requires_authentication(self):
+        self.client.force_authenticate(None)
+        resp = self.client.post(CART_ADD_BULK, {'items': [{'product_id': self.product.id}]}, format='json')
+        self.assertIn(resp.status_code, (401, 403))

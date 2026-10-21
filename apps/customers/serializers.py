@@ -175,8 +175,10 @@ class LoginSerializer(serializers.Serializer):
 
 class UserSerializer(serializers.ModelSerializer):
     customer_id = serializers.IntegerField(source='customer_profile.id', read_only=True)
-    mobile = serializers.SerializerMethodField()
-    date_of_birth = serializers.DateField(source='customer_profile.date_of_birth')
+    # Writable: the storefront edits these. Read values come from to_representation.
+    full_name = serializers.CharField(write_only=True, required=False, max_length=301)
+    mobile = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=15)
+    date_of_birth = serializers.DateField(source='customer_profile.date_of_birth', required=False, allow_null=True)
     gender = serializers.CharField(source='customer_profile.gender', required=False)
     address = serializers.CharField(source='customer_profile.address', required=False)
     city = serializers.CharField(source='customer_profile.city', required=False)
@@ -189,12 +191,12 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'customer_id', 'email', 'first_name', 'last_name',
+            'id', 'customer_id', 'email', 'first_name', 'last_name', 'full_name',
             'mobile', 'date_of_birth', 'gender', 'address', 'city', 'state',
             'pincode', 'loyalty_points', 'is_active', 'date_joined',
             'role', 'is_admin',
         ]
-        read_only_fields = ['id', 'is_active', 'date_joined', 'loyalty_points', 'role', 'is_admin']
+        read_only_fields = ['id', 'email', 'is_active', 'date_joined', 'loyalty_points', 'role', 'is_admin']
 
     def get_mobile(self, obj):
         mobile = obj.mobile_number
@@ -203,16 +205,42 @@ class UserSerializer(serializers.ModelSerializer):
                 mobile = obj.customer_profile.mobile
             except Exception:
                 mobile = ''
-        return mobile
+        return mobile or ''
 
     def get_is_admin(self, obj):
         return bool(obj.is_admin)
+
+    def validate_full_name(self, value):
+        value = ' '.join(value.split())
+        if len(value) < 2:
+            raise serializers.ValidationError('Enter your full name.')
+        return value
+
+    def validate_mobile(self, value):
+        value = value.strip()
+        if value and not re.fullmatch(r'[6-9]\d{9}', value):
+            raise serializers.ValidationError('Enter a valid 10-digit mobile number.')
+        return value
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['mobile'] = self.get_mobile(instance)
+        data['full_name'] = f'{instance.first_name} {instance.last_name}'.strip() or instance.email
+        return data
 
     def update(self, instance, validated_data):
         # Role/privilege escalation is impossible through the profile endpoint;
         # ``role`` and ``is_admin`` are read-only and never land in validated_data.
         validated_data.pop('role', None)
         customer_data = validated_data.pop('customer_profile', {})
+        full_name = validated_data.pop('full_name', None)
+        mobile = validated_data.pop('mobile', None)
+        if full_name is not None:
+            first, _, last = full_name.partition(' ')
+            instance.first_name, instance.last_name = first, last
+        if mobile is not None:
+            instance.mobile_number = mobile or None
+            customer_data['mobile'] = mobile
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()

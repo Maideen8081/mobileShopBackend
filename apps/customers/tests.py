@@ -79,3 +79,27 @@ class AddressIsolationTest(TestCase):
         self.assertEqual(resp.status_code, 404)
         self.alice_address.refresh_from_db()
         self.assertFalse(self.alice_address.is_default)
+
+class ProfileUpdateTests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+        from django.contrib.auth import get_user_model
+        self.client = APIClient(raise_request_exception=False)
+        self.user = get_user_model().objects.create_user(email='p@example.com', password='Str0ng!Pass')
+        self.client.force_authenticate(self.user)
+
+    def test_full_name_and_mobile_are_saved(self):
+        resp = self.client.put('/api/v1/auth/profile/', {'full_name': 'Joe  Bloggs', 'mobile': '9876543210'}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.user.refresh_from_db()
+        self.assertEqual((self.user.first_name, self.user.last_name), ('Joe', 'Bloggs'))
+        self.assertEqual(self.user.mobile_number, '9876543210')
+        self.assertEqual(resp.json()['data']['full_name'], 'Joe Bloggs')
+        self.assertEqual(resp.json()['data']['mobile'], '9876543210')
+
+    def test_rejects_invalid_mobile_and_ignores_email(self):
+        resp = self.client.put('/api/v1/auth/profile/', {'mobile': '12345'}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.client.put('/api/v1/auth/profile/', {'email': 'evil@example.com'}, format='json')
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, 'p@example.com')

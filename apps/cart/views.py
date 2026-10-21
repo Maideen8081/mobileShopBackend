@@ -1,6 +1,6 @@
 import logging
 
-from django.db import DatabaseError, IntegrityError
+from django.db import DatabaseError, IntegrityError, transaction
 from rest_framework import status
 from rest_framework.generics import GenericAPIView, RetrieveAPIView, DestroyAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -30,6 +30,39 @@ def _validation_error_response(errors):
     }, status=status.HTTP_400_BAD_REQUEST)
 
 
+def _add_variant_to_cart(cart, variant, quantity):
+    """Adds to (or tops up) a cart line. Returns (message, http_status) on failure, else None."""
+    existing_item = CartItem.objects.filter(cart=cart, variant=variant).first()
+
+    if existing_item:
+        new_qty = existing_item.quantity + quantity
+        if variant.stock_quantity < new_qty:
+            return (f'Only {variant.stock_quantity} unit(s) available in stock. '
+                    f'You already have {existing_item.quantity} in your cart.',
+                    status.HTTP_400_BAD_REQUEST)
+        existing_item.quantity = new_qty
+        existing_item.save()
+        return None
+
+    try:
+        with transaction.atomic():
+            CartItem.objects.create(
+                cart=cart,
+                product=variant.product,
+                variant=variant,
+                quantity=quantity,
+                price=variant.price,
+                discount_price=variant.discount_price,
+            )
+    except IntegrityError as e:
+        logger.error('[cartService] Integrity error adding item to cart: %s', e)
+        return 'Item already in cart. Please update the quantity.', status.HTTP_400_BAD_REQUEST
+    except DatabaseError as e:
+        logger.error('[cartService] Database error adding item to cart: %s', e)
+        return 'Database error. Please try again.', status.HTTP_503_SERVICE_UNAVAILABLE
+    return None
+
+
 class CartAddAPIView(GenericAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = AddToCartSerializer
@@ -52,47 +85,68 @@ class CartAddAPIView(GenericAPIView):
                 'message': 'Database error. Please try again.',
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-        existing_item = CartItem.objects.filter(cart=cart, variant=variant).first()
-
-        if existing_item:
-            new_qty = existing_item.quantity + quantity
-            if variant.stock_quantity < new_qty:
-                return Response({
-                    'success': False,
-                    'message': f'Only {variant.stock_quantity} unit(s) available in stock. '
-                               f'You already have {existing_item.quantity} in your cart.',
-                }, status=status.HTTP_400_BAD_REQUEST)
-            existing_item.quantity = new_qty
-            existing_item.save()
-            item = existing_item
-        else:
-            try:
-                item = CartItem.objects.create(
-                    cart=cart,
-                    product=variant.product,
-                    variant=variant,
-                    quantity=quantity,
-                    price=variant.price,
-                    discount_price=variant.discount_price,
-                )
-            except IntegrityError as e:
-                logger.error('[cartService] Integrity error adding item to cart: %s', e)
-                return Response({
-                    'success': False,
-                    'message': 'Item already in cart. Please update the quantity.',
-                }, status=status.HTTP_400_BAD_REQUEST)
-            except DatabaseError as e:
-                logger.error('[cartService] Database error adding item to cart: %s', e)
-                return Response({
-                    'success': False,
-                    'message': 'Database error. Please try again.',
-                }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        error = _add_variant_to_cart(cart, variant, quantity)
+        if error:
+            message, http_status = error
+            return Response({'success': False, 'message': message}, status=http_status)
 
         cart_serializer = CartSerializer(cart, context={'request': request})
         return Response({
             'success': True,
             'message': 'Product added to cart successfully.',
             'data': cart_serializer.data,
+        }, status=status.HTTP_200_OK)
+
+
+class CartBulkAddAPIView(GenericAPIView):
+    """Adds several products in one request (e.g. "move all to cart" from the wishlist).
+
+    Items are added independently: one out-of-stock product doesn't block the rest.
+    The response carries the updated cart plus which products were added or failed.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = AddToCartSerializer
+    MAX_ITEMS = 50
+
+    def post(self, request, *args, **kwargs):
+        items = request.data.get('items')
+        if not isinstance(items, list) or not items:
+            return Response({'success': False, 'message': 'items must be a non-empty list.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(items) > self.MAX_ITEMS:
+            return Response({'success': False, 'message': f'You can add at most {self.MAX_ITEMS} items at once.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            cart, _ = Cart.objects.get_or_create(user=request.user)
+        except DatabaseError as e:
+            logger.error('[cartService] Database error creating/getting cart: %s', e)
+            return Response({'success': False, 'message': 'Database error. Please try again.'},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        added, failed = [], []
+        for raw in items:
+            product_id = raw.get('product_id') if isinstance(raw, dict) else None
+            serializer = self.get_serializer(data=raw if isinstance(raw, dict) else {})
+            if not serializer.is_valid():
+                failed.append({'product_id': product_id,
+                               'message': _validation_error_response(serializer.errors).data['message']})
+                continue
+            error = _add_variant_to_cart(cart, serializer.validated_data['variant'],
+                                         serializer.validated_data['quantity'])
+            if error:
+                failed.append({'product_id': product_id, 'message': error[0]})
+            else:
+                added.append(serializer.validated_data['product_id'])
+
+        cart_serializer = CartSerializer(cart, context={'request': request})
+        return Response({
+            'success': bool(added),
+            'message': f'{len(added)} item(s) added to cart.' if added else 'No items could be added to cart.',
+            'data': cart_serializer.data,
+            'added': added,
+            'failed': failed,
         }, status=status.HTTP_200_OK)
 
 

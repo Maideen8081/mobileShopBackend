@@ -261,3 +261,17 @@ class CheckoutExitOfferTests(OrderSecurityBase):
         self.login_customer()
         resp = self.client.post(EXIT_OFFER, {'product_ids': 'x', 'subtotal': '10'}, format='json')
         self.assertEqual(resp.status_code, 400)
+
+
+class CustomerOrderListTests(OrderSecurityBase):
+    def test_lists_only_own_orders_with_items_newest_first(self):
+        other = User.objects.create_user(email='other@example.com', password='Str0ng!Pass')
+        Order.objects.create(user=other, shipping_address={}, subtotal=1, tax=0, shipping_charge=0, grand_total=1)
+        newer = Order.objects.create(user=self.customer, shipping_address={}, subtotal=5, tax=0,
+                                     shipping_charge=0, grand_total=5)
+        self.login_customer()
+        resp = self.client.get('/api/v1/order/user/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()['data']
+        self.assertEqual([o['id'] for o in data], [newer.id, self.order.id])
+        self.assertIn('items', data[0])

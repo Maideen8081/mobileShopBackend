@@ -18,7 +18,6 @@ from .models import Coupon, Order, OrderItem
 from .serializers import (
     CouponApplySerializer,
     OrderSerializer,
-    OrderListSerializer,
     CreateOrderSerializer,
     CreateRazorpayOrderSerializer,
     VerifyPaymentSerializer,
@@ -446,11 +445,13 @@ class CreateOrderAPIView(GenericAPIView):
 
 
 class UserOrderListAPIView(ListAPIView):
+    """The signed-in customer's own orders, in the same shape as the admin list."""
+
     permission_classes = [IsAuthenticated]
-    serializer_class = OrderListSerializer
+    serializer_class = SimpleOrderSerializer
 
     def get_queryset(self):
-        return Order.objects.filter(user=self.request.user).prefetch_related('items')
+        return Order.objects.filter(user=self.request.user).prefetch_related('items').order_by('-created_at')
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
