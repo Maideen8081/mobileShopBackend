@@ -2,6 +2,7 @@ from decouple import config
 from decimal import Decimal, ROUND_HALF_UP
 import razorpay
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.generics import GenericAPIView, ListAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -54,6 +55,149 @@ class CouponApplyAPIView(GenericAPIView):
                 'discount_amount': str(round(discount, 2)),
             },
         })
+
+
+def _coupon_discount(coupon, subtotal):
+    if coupon.discount_type == 'percentage':
+        amount = (coupon.discount_value / 100) * subtotal
+    else:
+        amount = coupon.discount_value
+    return min(amount, subtotal).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+def _variant_image(variant, request):
+    main = next((img for img in variant.images.all() if img.is_main), None) or next(iter(variant.images.all()), None)
+    if main:
+        return get_absolute_image_url(main.image, request)
+    return get_absolute_image_url(variant.product.common_image, request)
+
+
+def _percent_off(variant):
+    return int(((variant.price - variant.discount_price) / variant.price * 100).to_integral_value(rounding=ROUND_HALF_UP))
+
+
+class CheckoutExitOfferAPIView(GenericAPIView):
+    """Offers shown when a shopper is about to leave the payment page without ordering."""
+
+    permission_classes = [IsAuthenticated]
+    MAX_DEALS = 4
+    # Only nudge towards a coupon the shopper can reach with a modest top-up.
+    UNLOCK_GAP_RATIO = Decimal('0.3')
+
+    def post(self, request, *args, **kwargs):
+        raw_ids = request.data.get('product_ids') or []
+        if not isinstance(raw_ids, list):
+            return Response({'success': False, 'message': 'product_ids must be a list.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            product_ids = {int(pid) for pid in raw_ids[:50]}
+            subtotal = Decimal(str(request.data.get('subtotal') or '0'))
+        except (TypeError, ValueError, ArithmeticError):
+            return Response({'success': False, 'message': 'Invalid product_ids or subtotal.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if subtotal < 0:
+            subtotal = Decimal('0')
+
+        return Response({
+            'success': True,
+            'data': {
+                **self._coupons(subtotal),
+                'cart_savings': self._cart_savings(product_ids),
+                'deals': self._deals(product_ids, request),
+            },
+        })
+
+    def _coupons(self, subtotal):
+        coupons = [c for c in Coupon.objects.filter(is_active=True, expiry_date__gt=timezone.now()) if c.is_valid]
+
+        eligible = [c for c in coupons if c.minimum_amount <= subtotal]
+        best = max(eligible, key=lambda c: _coupon_discount(c, subtotal), default=None)
+        best_payload = None
+        if best and subtotal > 0 and _coupon_discount(best, subtotal) > 0:
+            best_payload = {
+                'code': best.code,
+                'discount_type': best.discount_type,
+                'discount_value': str(best.discount_value),
+                'discount_amount': str(_coupon_discount(best, subtotal)),
+                'expires_at': best.expiry_date.isoformat(),
+            }
+
+        best_amount = _coupon_discount(best, subtotal) if best else Decimal('0')
+        reachable = [
+            c for c in coupons
+            if c.minimum_amount > subtotal
+            and c.minimum_amount - subtotal <= c.minimum_amount * self.UNLOCK_GAP_RATIO
+            and _coupon_discount(c, c.minimum_amount) > best_amount
+        ]
+        unlock = min(reachable, key=lambda c: c.minimum_amount - subtotal, default=None)
+        unlock_payload = None
+        if unlock:
+            unlock_payload = {
+                'code': unlock.code,
+                'discount_type': unlock.discount_type,
+                'discount_value': str(unlock.discount_value),
+                'minimum_amount': str(unlock.minimum_amount),
+                'amount_needed': str((unlock.minimum_amount - subtotal).quantize(Decimal('0.01'))),
+            }
+        return {'coupon': best_payload, 'unlock_coupon': unlock_payload}
+
+    def _cart_savings(self, product_ids):
+        savings = []
+        variants = (ProductVariant.objects
+                    .filter(product_id__in=product_ids, is_active=True, discount_price__isnull=False)
+                    .select_related('product'))
+        best_by_product = {}
+        for v in variants:
+            if not (0 < v.discount_price < v.price):
+                continue
+            current = best_by_product.get(v.product_id)
+            if current is None or _percent_off(v) > _percent_off(current):
+                best_by_product[v.product_id] = v
+        for v in best_by_product.values():
+            savings.append({
+                'product_id': v.product_id,
+                'name': v.product.product_name,
+                'price': str(v.price),
+                'discount_price': str(v.discount_price),
+                'percent_off': _percent_off(v),
+            })
+        return savings
+
+    def _deals(self, product_ids, request):
+        base = (ProductVariant.objects
+                .filter(is_active=True, stock_quantity__gt=0, discount_price__isnull=False,
+                        product__is_published=True)
+                .exclude(product_id__in=product_ids)
+                .select_related('product')
+                .prefetch_related('images'))
+        category_ids = list(Product.objects.filter(id__in=product_ids).values_list('category_id', flat=True))
+
+        picked = {}
+
+        def collect(qs):
+            for v in qs.order_by('-updated_at')[:80]:
+                if not (0 < v.discount_price < v.price):
+                    continue
+                current = picked.get(v.product_id)
+                if current is None or _percent_off(v) > _percent_off(current):
+                    picked[v.product_id] = v
+
+        if category_ids:
+            collect(base.filter(product__category_id__in=category_ids))
+        if len(picked) < 2:
+            collect(base)
+
+        ranked = sorted(picked.values(), key=_percent_off, reverse=True)[:self.MAX_DEALS]
+        return [{
+            'product_id': v.product_id,
+            'variant_id': v.id,
+            'name': v.product.product_name,
+            'brand': v.product.brand,
+            'image': _variant_image(v, request),
+            'price': str(v.price),
+            'discount_price': str(v.discount_price),
+            'percent_off': _percent_off(v),
+        } for v in ranked]
 
 
 class CreateRazorpayOrderAPIView(GenericAPIView):

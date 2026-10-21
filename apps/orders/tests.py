@@ -185,3 +185,48 @@ class SimpleOrderIntegrityTest(OrderSecurityBase):
         self.assertEqual(resp.status_code, 201)
         order = Order.objects.filter(user=self.customer).order_by('-id').first()
         self.assertEqual(order.shipping_charge, Decimal('49.00'))
+
+EXIT_OFFER = '/api/v1/checkout/exit-offer/'
+
+
+class CheckoutExitOfferTests(OrderSecurityBase):
+    def setUp(self):
+        super().setUp()
+        later = timezone.now() + timezone.timedelta(days=7)
+        Coupon.objects.create(code='SAVE10', discount_type='percentage', discount_value=Decimal('10'),
+                              minimum_amount=Decimal('5000'), expiry_date=later)
+        Coupon.objects.create(code='FLAT500', discount_type='fixed', discount_value=Decimal('500'),
+                              minimum_amount=Decimal('0'), expiry_date=later)
+        Coupon.objects.create(code='BIG3000', discount_type='fixed', discount_value=Decimal('3000'),
+                              minimum_amount=Decimal('12000'), expiry_date=later)
+        Coupon.objects.create(code='OLD', discount_type='fixed', discount_value=Decimal('9000'),
+                              minimum_amount=Decimal('0'), expiry_date=timezone.now() - timezone.timedelta(days=1))
+        self.variant.discount_price = Decimal('9000.00')
+        self.variant.save()
+        other = Product.objects.create(product_name='Nova Buds', brand='Nova', model_number='NB1',
+                                       category=self.category)
+        self.deal = ProductVariant.objects.create(product=other, variant_name='Std', color='White',
+                                                  ram_size='-', storage_size='-', price=Decimal('2000.00'),
+                                                  discount_price=Decimal('1500.00'), stock_quantity=4)
+
+    def test_requires_login(self):
+        resp = self.client.post(EXIT_OFFER, {'product_ids': [self.product.id], 'subtotal': '10000'}, format='json')
+        self.assertIn(resp.status_code, (401, 403))
+
+    def test_returns_best_coupon_unlock_savings_and_deals(self):
+        self.login_customer()
+        resp = self.client.post(EXIT_OFFER, {'product_ids': [self.product.id], 'subtotal': '10000'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()['data']
+        self.assertEqual(data['coupon']['code'], 'SAVE10')
+        self.assertEqual(Decimal(data['coupon']['discount_amount']), Decimal('1000.00'))
+        self.assertEqual(data['unlock_coupon']['code'], 'BIG3000')
+        self.assertEqual(Decimal(data['unlock_coupon']['amount_needed']), Decimal('2000.00'))
+        self.assertEqual(data['cart_savings'][0]['percent_off'], 10)
+        self.assertEqual([d['product_id'] for d in data['deals']], [self.deal.product_id])
+        self.assertEqual(data['deals'][0]['percent_off'], 25)
+
+    def test_rejects_bad_input(self):
+        self.login_customer()
+        resp = self.client.post(EXIT_OFFER, {'product_ids': 'x', 'subtotal': '10'}, format='json')
+        self.assertEqual(resp.status_code, 400)
