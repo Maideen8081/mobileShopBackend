@@ -32,6 +32,10 @@ from apps.repairs.serializers import (
     NotificationSerializer,
     RepairBookSerializer,
     RepairCustomerApproveSerializer,
+    RepairCustomerCancelSerializer,
+    RepairCustomerCourierSerializer,
+    RepairCustomerNoteSerializer,
+    RepairMyTicketListSerializer,
     RepairNoteCreateSerializer,
     RepairNoteListSerializer,
     RepairServiceSerializer,
@@ -134,10 +138,14 @@ class RepairBookAPIView(GenericAPIView):
 
 class RepairMyTicketsAPIView(ListAPIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = RepairTicketListSerializer
+    serializer_class = RepairMyTicketListSerializer
 
     def get_queryset(self):
-        return RepairTicket.objects.filter(user=self.request.user).select_related('service').prefetch_related('photos')
+        return (
+            RepairTicket.objects.filter(user=self.request.user)
+            .select_related('service')
+            .prefetch_related('photos', 'status_history')
+        )
 
     def list(self, request, *args, **kwargs):
         try:
@@ -181,6 +189,97 @@ class RepairMyTicketDetailAPIView(RetrieveAPIView):
                 'success': False,
                 'message': 'Database error. Please try again.',
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+class _MyTicketActionMixin:
+    """Resolves a ticket owned by the requesting customer and returns its detail payload."""
+
+    def get_my_ticket(self, request, pk):
+        try:
+            return RepairTicket.objects.get(pk=pk, user=request.user)
+        except RepairTicket.DoesNotExist:
+            return None
+
+    def not_found(self):
+        return Response({
+            'success': False,
+            'message': 'Repair ticket not found.',
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    def detail_response(self, request, ticket, message, http_status=status.HTTP_200_OK):
+        ticket = RepairTicket.objects.prefetch_related('photos', 'notes', 'status_history').get(pk=ticket.pk)
+        return Response({
+            'success': True,
+            'message': message,
+            'data': RepairTicketDetailSerializer(ticket, context={'request': request}).data,
+        }, status=http_status)
+
+
+class RepairMyTicketNoteCreateAPIView(_MyTicketActionMixin, GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = RepairCustomerNoteSerializer
+
+    def post(self, request, *args, **kwargs):
+        ticket = self.get_my_ticket(request, kwargs.get('pk'))
+        if ticket is None:
+            return self.not_found()
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        RepairNote.objects.create(
+            repair_ticket=ticket,
+            message=serializer.validated_data['message'],
+            author_name=(request.user.get_full_name() or ticket.customer_name or 'Customer')[:100],
+            is_admin=False,
+        )
+        return self.detail_response(request, ticket, 'Message sent.', status.HTTP_201_CREATED)
+
+
+class RepairMyTicketCourierAPIView(_MyTicketActionMixin, GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = RepairCustomerCourierSerializer
+
+    def post(self, request, *args, **kwargs):
+        ticket = self.get_my_ticket(request, kwargs.get('pk'))
+        if ticket is None:
+            return self.not_found()
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        success, message = RepairTicketService.customer_submit_courier(
+            ticket,
+            data['courier_company'],
+            data['courier_tracking_number'],
+            data.get('courier_pickup_date') or timezone.localdate(),
+            data.get('notes', ''),
+        )
+        if not success:
+            return Response({'success': False, 'message': message}, status=status.HTTP_400_BAD_REQUEST)
+        return self.detail_response(request, ticket, message)
+
+
+class RepairMyTicketCancelAPIView(_MyTicketActionMixin, GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = RepairCustomerCancelSerializer
+
+    def post(self, request, *args, **kwargs):
+        ticket = self.get_my_ticket(request, kwargs.get('pk'))
+        if ticket is None:
+            return self.not_found()
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        old_status = ticket.status
+        success, message = RepairTicketService.customer_cancel(ticket, serializer.validated_data.get('reason', ''))
+        if not success:
+            return Response({'success': False, 'message': message}, status=status.HTTP_400_BAD_REQUEST)
+
+        send_status_update_notification(ticket, old_status, ticket.status)
+        return self.detail_response(request, ticket, 'Repair request cancelled.')
 
 
 class RepairTicketListAPIView(ListAPIView):

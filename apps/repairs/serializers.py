@@ -223,6 +223,58 @@ class RepairTicketListSerializer(serializers.ModelSerializer):
         return STATUS_LABELS.get(obj.status, obj.status)
 
 
+class RepairMyTicketListSerializer(RepairTicketListSerializer):
+    """Customer-facing list row: adds a thumbnail, courier info and the latest update.
+
+    Expects ``photos`` and ``status_history`` to be prefetched.
+    """
+    thumbnail = serializers.SerializerMethodField()
+    last_update = serializers.SerializerMethodField()
+
+    class Meta(RepairTicketListSerializer.Meta):
+        fields = RepairTicketListSerializer.Meta.fields + [
+            'imei_number', 'device_color',
+            'courier_company', 'courier_tracking_number', 'courier_pickup_date',
+            'thumbnail', 'last_update',
+        ]
+
+    def get_photo_count(self, obj):
+        return len(obj.photos.all())
+
+    def get_thumbnail(self, obj):
+        photos = obj.photos.all()
+        if not photos:
+            return None
+        return get_absolute_image_url(photos[0].image, self.context.get('request')) or None
+
+    def get_last_update(self, obj):
+        history = obj.status_history.all()
+        if not history:
+            return None
+        latest = history[0]
+        return {
+            'status': latest.status,
+            'status_label': STATUS_LABELS.get(latest.status, latest.status),
+            'notes': latest.notes,
+            'created_at': latest.created_at,
+        }
+
+
+class RepairCustomerNoteSerializer(serializers.Serializer):
+    message = serializers.CharField(max_length=2000, trim_whitespace=True)
+
+
+class RepairCustomerCourierSerializer(serializers.Serializer):
+    courier_company = serializers.CharField(max_length=100, trim_whitespace=True)
+    courier_tracking_number = serializers.CharField(max_length=100, trim_whitespace=True)
+    courier_pickup_date = serializers.DateField(required=False, allow_null=True)
+    notes = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')
+
+
+class RepairCustomerCancelSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')
+
+
 class RepairTicketDetailSerializer(serializers.ModelSerializer):
     photos = RepairTicketPhotoSerializer(many=True, read_only=True)
     notes = RepairNoteListSerializer(many=True, read_only=True)

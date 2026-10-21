@@ -13,8 +13,39 @@ CUSTOMER_APPROVED_TRANSITIONS = {
     'awaiting_approval': {'approve': 'inspection', 'decline': 'cancelled'},
 }
 
+# A customer may only withdraw a request before the device is with the shop.
+CUSTOMER_CANCELLABLE_STATUSES = ('pending', 'accepted')
+
 
 class RepairTicketService:
+
+    @staticmethod
+    def customer_cancel(ticket, reason=''):
+        if ticket.status not in CUSTOMER_CANCELLABLE_STATUSES:
+            return False, 'This repair can no longer be cancelled online. Please contact support.'
+        notes = f'Cancelled by customer. Reason: {reason}' if reason else 'Cancelled by customer.'
+        return RepairTicketService.update_status(ticket, 'cancelled', updated_by='Customer', notes=notes)
+
+    @staticmethod
+    def customer_submit_courier(ticket, courier_company, tracking_number, pickup_date=None, notes=''):
+        if ticket.status != 'accepted':
+            return False, 'Courier details can only be added once the repair is accepted and before the device is received.'
+
+        ticket.courier_company = courier_company
+        ticket.courier_tracking_number = tracking_number
+        ticket.courier_pickup_date = pickup_date
+        ticket.save(update_fields=['courier_company', 'courier_tracking_number', 'courier_pickup_date', 'updated_at'])
+
+        history_notes = f'Customer shipped the device via {courier_company} (tracking {tracking_number}).'
+        if notes:
+            history_notes = f'{history_notes} {notes}'
+        RepairStatusHistory.objects.create(
+            repair_ticket=ticket,
+            status=ticket.status,
+            updated_by='Customer',
+            notes=history_notes,
+        )
+        return True, 'Courier details saved.'
 
     @staticmethod
     def customer_approve(ticket, action, notes=''):
@@ -24,7 +55,7 @@ class RepairTicketService:
             return False, f'Cannot {action} in current status.'
 
         ticket.status = new_status
-        ticket.save(update_fields=['status'])
+        ticket.save(update_fields=['status', 'updated_at'])
 
         if action == 'approve':
             ticket.customer_approved = True
@@ -73,7 +104,7 @@ class RepairTicketService:
             return False, f'Cannot transition from "{STATUS_LABELS.get(current, current)}" to "{STATUS_LABELS.get(new_status, new_status)}".'
 
         ticket.status = new_status
-        ticket.save(update_fields=['status'])
+        ticket.save(update_fields=['status', 'updated_at'])
 
         if extra_fields:
             for field, value in extra_fields.items():

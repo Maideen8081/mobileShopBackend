@@ -10,6 +10,9 @@ urlpatterns = [
     path('book/', views.RepairBookAPIView.as_view(), name='repair-book'),
     path('my-tickets/', views.RepairMyTicketsAPIView.as_view(), name='repair-my-tickets'),
     path('my-tickets/<int:pk>/', views.RepairMyTicketDetailAPIView.as_view(), name='repair-my-ticket-detail'),
+    path('my-tickets/<int:pk>/notes/', views.RepairMyTicketNoteCreateAPIView.as_view(), name='repair-my-ticket-note'),
+    path('my-tickets/<int:pk>/courier/', views.RepairMyTicketCourierAPIView.as_view(), name='repair-my-ticket-courier'),
+    path('my-tickets/<int:pk>/cancel/', views.RepairMyTicketCancelAPIView.as_view(), name='repair-my-ticket-cancel'),
 
     # Notifications (authenticated)
     path('notifications/', views.NotificationListAPIView.as_view(), name='repair-notification-list'),
