@@ -1,39 +1,64 @@
-from django.db.models import Count, Sum, Min, Q, F
+from decimal import Decimal
+
+from django.db import transaction
+from django.db.models import Count, Sum, Min, Q, F, Value
+from django.db.models.functions import Coalesce, NullIf
 from drf_spectacular.utils import extend_schema
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import status, filters
 from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView, UpdateAPIView, DestroyAPIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from apps.common.permissions import IsAdminUser
+from apps.common.permissions import IsAdminUser, is_admin_account
 
 from .models import Product, ProductVariant, VariantImage
 from .serializers import (
-    ProductCreateSerializer,
-    ProductUpdateSerializer,
+    ProductWriteSerializer,
     ProductListSerializer,
     ProductDetailSerializer,
-    ProductVariantSerializer,
     VariantImageSerializer,
+    published_filter,
 )
+from .validators import MAX_IMAGES_PER_VARIANT, validate_product_image
 from rest_framework.pagination import PageNumberPagination
+
+# What a customer actually pays for a variant: its discount price when set.
+SELLING_PRICE = Coalesce(NullIf('variants__discount_price', Value(Decimal('0'))), 'variants__price')
+
+
+class ProductPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+def visible_products(request):
+    """Admins see every product; shoppers only published ones in active categories."""
+    qs = Product.objects.all()
+    if not is_admin_account(request.user):
+        qs = qs.filter(published_filter())
+    return qs
 
 
 class ProductListAPIView(ListAPIView):
     serializer_class = ProductListSerializer
     permission_classes = [AllowAny]
+    pagination_class = ProductPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['product_name', 'brand', 'model_number']
     ordering_fields = ['product_name', 'created_at', 'brand']
     ordering = ['-created_at']
 
     def get_queryset(self):
-        qs = Product.objects.select_related('category', 'sub_category').annotate(
+        qs = visible_products(self.request).select_related('category', 'sub_category').annotate(
             variant_count=Count('variants', filter=Q(variants__is_active=True)),
             total_stock=Sum('variants__stock_quantity'),
-            min_price=Min('variants__price'),
+            min_price=Min(SELLING_PRICE),
         )
+        if self.include_variants():
+            qs = qs.prefetch_related('variants__images')
         category = self.request.query_params.get('category')
         category_name = self.request.query_params.get('category_name')
         sub_category = self.request.query_params.get('sub_category')
@@ -79,6 +104,12 @@ class ProductListAPIView(ListAPIView):
 
         return qs
 
+    def include_variants(self):
+        return self.request.query_params.get('include') == 'variants'
+
+    def get_serializer_context(self):
+        return {**super().get_serializer_context(), 'include_variants': self.include_variants()}
+
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(queryset)
@@ -101,70 +132,30 @@ class ProductListAPIView(ListAPIView):
 
 class ProductCreateAPIView(CreateAPIView):
     queryset = Product.objects.all()
-    serializer_class = ProductCreateSerializer
+    serializer_class = ProductWriteSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     permission_classes = [IsAdminUser]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        product = serializer.save()
-
-        self._handle_variant_images(request, product)
-
-        detail = ProductDetailSerializer(product)
+        with transaction.atomic():
+            product = serializer.save()
         return Response({
             'success': True,
             'message': 'Product created successfully',
-            'data': detail.data,
+            'data': ProductDetailSerializer(product, context={'request': request}).data,
         }, status=status.HTTP_201_CREATED)
-
-    def _handle_variant_images(self, request, product):
-        variant_images = request.FILES.getlist('variant_images')
-        variant_image_map = request.data.get('variant_image_map')
-
-        if not variant_images:
-            return
-
-        variants = list(product.variants.all())
-        if not variants:
-            return
-
-        if isinstance(variant_image_map, str):
-            import json
-            try:
-                variant_image_map = json.loads(variant_image_map)
-            except json.JSONDecodeError:
-                variant_image_map = {}
-
-        if isinstance(variant_image_map, dict):
-            mappings = []
-            for i in range(len(variant_images)):
-                m = variant_image_map.get(str(i)) or variant_image_map.get(i)
-                mappings.append(m if m else {})
-        elif isinstance(variant_image_map, list):
-            mappings = variant_image_map
-        else:
-            mappings = [{}] * len(variant_images)
-
-        for idx, img_file in enumerate(variant_images):
-            mapping = mappings[idx] if idx < len(mappings) else {}
-            variant_index = mapping.get('variant_index', 0) if isinstance(mapping, dict) else 0
-            is_main = mapping.get('is_main', False) if isinstance(mapping, dict) else False
-            if variant_index < len(variants):
-                VariantImage.objects.create(
-                    variant=variants[variant_index],
-                    image=img_file,
-                    is_main=is_main,
-                )
 
 
 class ProductDetailAPIView(RetrieveAPIView):
-    queryset = Product.objects.select_related('category', 'sub_category').prefetch_related(
-        'features', 'care_instructions', 'variants__images'
-    )
     serializer_class = ProductDetailSerializer
     permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        return visible_products(self.request).select_related('category', 'sub_category').prefetch_related(
+            'features', 'care_instructions', 'variants__images'
+        )
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -177,63 +168,22 @@ class ProductDetailAPIView(RetrieveAPIView):
 
 class ProductUpdateAPIView(UpdateAPIView):
     queryset = Product.objects.all()
-    serializer_class = ProductUpdateSerializer
+    serializer_class = ProductWriteSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     permission_classes = [IsAdminUser]
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data)
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        product = serializer.save()
-
-        self._handle_variant_images(request, product)
-
-        detail = ProductDetailSerializer(product)
+        with transaction.atomic():
+            product = serializer.save()
+        product = Product.objects.prefetch_related('features', 'care_instructions', 'variants__images').get(pk=product.pk)
         return Response({
             'success': True,
             'message': 'Product updated successfully',
-            'data': detail.data,
+            'data': ProductDetailSerializer(product, context={'request': request}).data,
         })
-
-    def _handle_variant_images(self, request, product):
-        variant_images = request.FILES.getlist('variant_images')
-        variant_image_map = request.data.get('variant_image_map')
-
-        if not variant_images:
-            return
-
-        variants = list(product.variants.all())
-        if not variants:
-            return
-
-        if isinstance(variant_image_map, str):
-            import json
-            try:
-                variant_image_map = json.loads(variant_image_map)
-            except json.JSONDecodeError:
-                variant_image_map = {}
-
-        if isinstance(variant_image_map, dict):
-            mappings = []
-            for i in range(len(variant_images)):
-                m = variant_image_map.get(str(i)) or variant_image_map.get(i)
-                mappings.append(m if m else {})
-        elif isinstance(variant_image_map, list):
-            mappings = variant_image_map
-        else:
-            mappings = [{}] * len(variant_images)
-
-        for idx, img_file in enumerate(variant_images):
-            mapping = mappings[idx] if idx < len(mappings) else {}
-            variant_index = mapping.get('variant_index', 0) if isinstance(mapping, dict) else 0
-            is_main = mapping.get('is_main', False) if isinstance(mapping, dict) else False
-            if variant_index < len(variants):
-                VariantImage.objects.create(
-                    variant=variants[variant_index],
-                    image=img_file,
-                    is_main=is_main,
-                )
 
 
 class ProductDeleteAPIView(DestroyAPIView):
@@ -264,9 +214,11 @@ class ProductDashboardCountsAPIView(ListAPIView):
         best_selling = Product.objects.filter(is_best_selling=True).count()
         featured = Product.objects.filter(is_featured=True).count()
         total_variants = ProductVariant.objects.count()
-        low_stock = ProductVariant.objects.filter(
+        low_stock_qs = ProductVariant.objects.filter(
             stock_quantity__gt=0, stock_quantity__lte=F('low_stock_alert'), is_active=True
-        ).count()
+        )
+        low_stock = low_stock_qs.count()
+        low_stock_products = low_stock_qs.values('product_id').distinct().count()
 
         return Response({
             'total_products': total,
@@ -278,6 +230,7 @@ class ProductDashboardCountsAPIView(ListAPIView):
             'featured_products': featured,
             'total_variants': total_variants,
             'low_stock_variants': low_stock,
+            'low_stock_products': low_stock_products,
         })
 
 
@@ -289,7 +242,7 @@ class ProductSearchAPIView(ListAPIView):
         query = self.request.query_params.get('query', '')
         if not query:
             return Product.objects.none()
-        return Product.objects.select_related('category', 'sub_category').filter(
+        return visible_products(self.request).select_related('category', 'sub_category').filter(
             Q(product_name__icontains=query) |
             Q(brand__icontains=query) |
             Q(model_number__icontains=query) |
@@ -297,7 +250,7 @@ class ProductSearchAPIView(ListAPIView):
         ).annotate(
             variant_count=Count('variants', filter=Q(variants__is_active=True)),
             total_stock=Sum('variants__stock_quantity'),
-            min_price=Min('variants__price'),
+            min_price=Min(SELLING_PRICE),
         )[:20]
 
     def list(self, request, *args, **kwargs):
@@ -315,16 +268,15 @@ class LowStockProductsAPIView(ListAPIView):
 
     def get_queryset(self):
         low_stock_variant_ids = ProductVariant.objects.filter(
-            stock_quantity__gt=0,
-                    stock_quantity__lte=F('low_stock_alert')
-                ).values_list('product_id', flat=True).distinct()
+            stock_quantity__gt=0, stock_quantity__lte=F('low_stock_alert'), is_active=True,
+        ).values_list('product_id', flat=True).distinct()
 
         return Product.objects.filter(id__in=low_stock_variant_ids).select_related(
             'category', 'sub_category'
         ).annotate(
             variant_count=Count('variants', filter=Q(variants__is_active=True)),
             total_stock=Sum('variants__stock_quantity'),
-            min_price=Min('variants__price'),
+            min_price=Min(SELLING_PRICE),
         )
 
     def list(self, request, *args, **kwargs):
@@ -359,20 +311,29 @@ class VariantImageUploadAPIView(CreateAPIView):
                 'message': 'At least one image is required.',
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        if len(images) > 10:
+        if variant.images.count() + len(images) > MAX_IMAGES_PER_VARIANT:
             return Response({
                 'success': False,
-                'message': 'Maximum 10 images allowed per variant.',
+                'message': f'Maximum {MAX_IMAGES_PER_VARIANT} images allowed per variant.',
             }, status=status.HTTP_400_BAD_REQUEST)
+        for image in images:
+            try:
+                validate_product_image(image)
+            except DjangoValidationError as exc:
+                return Response({
+                    'success': False,
+                    'message': f'{image.name}: {"; ".join(exc.messages)}',
+                }, status=status.HTTP_400_BAD_REQUEST)
 
         created = []
-        for image in images:
-            img = VariantImage.objects.create(
-                variant=variant,
-                image=image,
-                is_main=not variant.images.exists(),
-            )
-            created.append(VariantImageSerializer(img).data)
+        with transaction.atomic():
+            for image in images:
+                img = VariantImage.objects.create(
+                    variant=variant,
+                    image=image,
+                    is_main=not variant.images.exists(),
+                )
+                created.append(VariantImageSerializer(img, context={'request': request}).data)
 
         return Response({
             'success': True,
@@ -388,8 +349,19 @@ class VariantImageDeleteAPIView(DestroyAPIView):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        instance.image.delete()
+        variant = instance.variant
+        if variant.images.count() <= 1:
+            return Response({
+                'success': False,
+                'message': 'A variant must keep at least one image. Upload another image first.',
+            }, status=status.HTTP_400_BAD_REQUEST)
+        was_main = instance.is_main
+        # The file stays in storage: past order items link to it by URL.
         instance.delete()
+        if was_main:
+            first = variant.images.order_by('id').first()
+            first.is_main = True
+            first.save(update_fields=['is_main'])
         return Response({
             'success': True,
             'message': 'Image deleted successfully',

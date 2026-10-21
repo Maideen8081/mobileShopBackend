@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from apps.cart.models import Cart, CartItem
 from apps.common.permissions import IsAdminUser
+from apps.common.pricing import selling_price, shipping_for, tax_for
 from apps.common.serializers import get_absolute_image_url
 from apps.customers.models import Address
 from apps.products.models import Product, ProductVariant, VariantImage
@@ -521,8 +522,12 @@ class SimpleCreateOrderAPIView(GenericAPIView):
                 'country': address_obj.country,
             }
 
-        payment_method = data.get('payment_method', 'card')
-        payment_status = 'pending' if payment_method == 'cod' else 'paid'
+        payment_method = data.get('payment_method', 'card').strip()
+        if payment_method.lower() in ('cod', 'cash on delivery'):
+            payment_method = 'cod'
+        # Nothing has been charged yet: COD is collected on delivery, and online
+        # payments are only marked paid by the verified payment flow.
+        payment_status = 'pending'
 
         # ------------------------------------------------------------------
         # Server-side pricing. Client-supplied prices, totals and discounts are
@@ -566,14 +571,15 @@ class SimpleCreateOrderAPIView(GenericAPIView):
                                f'Only {variant.stock_quantity} available.',
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            unit_price = self._money(variant.price)
+            # Charge what the storefront shows: the discount price when set.
+            unit_price = selling_price(variant)
             line_total = self._money(unit_price * item['quantity'])
             subtotal += line_total
             prepared_items.append((variant, product, item, unit_price, line_total))
 
         subtotal = self._money(subtotal)
-        tax = self._money(subtotal * Decimal('0.18'))
-        shipping_charge = Decimal('0.00') if subtotal >= Decimal('500.00') else Decimal('49.00')
+        tax = tax_for(subtotal)
+        shipping_charge = shipping_for(subtotal)
 
         discount_amount = Decimal('0.00')
         coupon_code = data.get('coupon_code', '')

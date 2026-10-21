@@ -48,6 +48,16 @@ class AddressIsolationTest(TestCase):
         self.assertIn(Address.objects.get(user=self.bob).id, ids)
         self.assertNotIn(self.alice_address.id, ids)
 
+    def test_address_line2_is_optional(self):
+        # Matches the app's form, where area/locality is optional.
+        resp = self.bob_client.post(ADDRESS_CREATE, {
+            'full_name': 'Bob', 'mobile': '2222222222', 'address_line1': '12 MG Road',
+            'address_line2': '', 'landmark': '', 'city': 'Town', 'state': 'State',
+            'zip_code': '411001', 'country': 'India', 'address_type': 'Office', 'is_default': False,
+        }, format='json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()['data']['address_line2'], '')
+
     def test_address_update_is_ownership_scoped(self):
         resp = self.bob_client.put(
             f'/api/v1/address/update/{self.alice_address.id}/',

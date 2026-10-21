@@ -1,6 +1,8 @@
 import logging
+from decimal import Decimal
 
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Value
+from django.db.models.functions import Coalesce, NullIf
 from rest_framework import serializers
 from apps.products.models import Product, ProductVariant, VariantImage
 from .models import Cart, CartItem
@@ -98,10 +100,12 @@ class AddToCartSerializer(serializers.Serializer):
             if variant is None:
                 raise serializers.ValidationError('Product variation not found.')
         else:
-            # Cheapest in-stock variant, matching the min_price shown on listings.
+            # Cheapest in-stock variant by selling price, matching the
+            # min_price shown on listings.
+            selling_price = Coalesce(NullIf('discount_price', Value(Decimal('0'))), 'price')
             variant = (
-                active_variants.filter(stock_quantity__gt=0).order_by('price', 'id').first()
-                or active_variants.order_by('price', 'id').first()
+                active_variants.filter(stock_quantity__gt=0).order_by(selling_price, 'id').first()
+                or active_variants.order_by(selling_price, 'id').first()
             )
             if variant is None:
                 raise serializers.ValidationError('This product is currently unavailable.')

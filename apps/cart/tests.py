@@ -118,3 +118,28 @@ class CartAPITests(TestCase):
         self.add(product_id=self.product.id, variation_id=self.cheap.id)
         self.client.delete(CART_CLEAR)
         self.assertEqual(self.client.get(CART).data['data']['products'], [])
+
+    def test_default_variant_uses_selling_price(self):
+        # MRP is higher than `cheap`, but the discounted price is the lowest.
+        deal = ProductVariant.objects.create(
+            product=self.product, variant_name='Deal', color='Green',
+            ram_size='8', storage_size='128', price=Decimal('25000.00'),
+            discount_price=Decimal('15000.00'), stock_quantity=2,
+        )
+        res = self.add(product_id=self.product.id)
+        self.assertEqual(res.data['data']['products'][0]['variation_id'], deal.id)
+
+    def test_listing_min_price_is_the_selling_price(self):
+        self.client.force_authenticate(None)
+        res = self.client.get('/api/v1/products/')
+        self.assertEqual(res.status_code, 200)
+        product = next(p for p in res.data['data'] if p['id'] == self.product.id)
+        self.assertEqual(Decimal(str(product['min_price'])), Decimal('18000.00'))
+
+    def test_tax_and_shipping_apply_to_discounted_amount(self):
+        self.add(product_id=self.product.id, variation_id=self.cheap.id, quantity=1)
+        data = self.client.get(CART).data['data']
+        # MRP 20000, discount 2000 → payable 18000; 18% GST = 3240; free delivery.
+        self.assertEqual(Decimal(data['tax']), Decimal('3240.00'))
+        self.assertEqual(Decimal(data['shipping_charge']), Decimal('0.00'))
+        self.assertEqual(Decimal(data['grand_total']), Decimal('21240.00'))
