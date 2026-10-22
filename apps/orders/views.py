@@ -697,6 +697,16 @@ class OrderDetailByNumberAPIView(GenericAPIView):
         })
 
 
+# Orders move forward one fulfilment step at a time (skipping ahead is allowed,
+# going back is not) and can only be cancelled before they leave the warehouse.
+_FULFILMENT = ['order_placed', 'accepted', 'processing', 'shipped', 'out_for_delivery', 'delivered']
+ORDER_STATUS_TRANSITIONS = {
+    current: set(_FULFILMENT[i + 1:]) | ({'cancelled'} if current in ('order_placed', 'accepted', 'processing') else set())
+    for i, current in enumerate(_FULFILMENT)
+}
+ORDER_STATUS_TRANSITIONS['cancelled'] = set()
+
+
 class UpdateOrderStatusAPIView(GenericAPIView):
     permission_classes = [IsAdminUser]
 
@@ -709,12 +719,23 @@ class UpdateOrderStatusAPIView(GenericAPIView):
                 'message': 'Order not found.',
             }, status=status.HTTP_404_NOT_FOUND)
 
-        new_status = request.data.get('status', '').strip()
+        new_status = str(request.data.get('status', '')).strip()
         valid_statuses = [choice[0] for choice in Order.ORDER_STATUS]
         if new_status not in valid_statuses:
             return Response({
                 'success': False,
                 'message': f'Invalid status. Must be one of: {", ".join(valid_statuses)}',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed = ORDER_STATUS_TRANSITIONS.get(order.order_status, set())
+        if new_status not in allowed:
+            labels = dict(Order.ORDER_STATUS)
+            return Response({
+                'success': False,
+                'message': (
+                    f'Cannot change an order from "{labels.get(order.order_status, order.order_status)}" '
+                    f'to "{labels.get(new_status, new_status)}".'
+                ),
             }, status=status.HTTP_400_BAD_REQUEST)
 
         order.order_status = new_status

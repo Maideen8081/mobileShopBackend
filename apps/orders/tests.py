@@ -275,3 +275,39 @@ class CustomerOrderListTests(OrderSecurityBase):
         data = resp.json()['data']
         self.assertEqual([o['id'] for o in data], [newer.id, self.order.id])
         self.assertIn('items', data[0])
+
+
+class OrderStatusTransitionTest(TestCase):
+    """Admins move orders forward only, and can't cancel once shipped."""
+
+    def setUp(self):
+        self.client = APIClient(raise_request_exception=False)
+        customer = User.objects.create_user(email='buyer@example.com', password='Str0ng!Pass')
+        admin = User.objects.create_user(email='ops@example.com', password='Str0ng!Pass', role='admin', is_staff=True)
+        self.order = Order.objects.create(
+            user=customer, shipping_address={}, subtotal=100, tax=0, shipping_charge=0, grand_total=100,
+        )
+        self.client.force_authenticate(admin)
+
+    def put(self, new_status):
+        return self.client.put(f'{UPDATE_STATUS}{self.order.order_number}/', {'status': new_status}, format='json')
+
+    def test_forward_and_skip_ahead_allowed(self):
+        self.assertEqual(self.put('accepted').status_code, 200)
+        self.assertEqual(self.put('shipped').status_code, 200)
+        self.assertEqual(self.put('delivered').status_code, 200)
+        self.order.refresh_from_db()
+        self.assertEqual((self.order.order_status, self.order.payment_status), ('delivered', 'paid'))
+
+    def test_cannot_go_backwards_or_repeat(self):
+        self.put('shipped')
+        self.assertEqual(self.put('processing').status_code, 400)
+        self.assertEqual(self.put('shipped').status_code, 400)
+
+    def test_cannot_cancel_after_shipping_or_revive_cancelled(self):
+        self.put('shipped')
+        self.assertEqual(self.put('cancelled').status_code, 400)
+        other = Order.objects.create(user=self.order.user, shipping_address={}, subtotal=1, tax=0, shipping_charge=0, grand_total=1)
+        self.client.put(f'{UPDATE_STATUS}{other.order_number}/', {'status': 'cancelled'}, format='json')
+        r = self.client.put(f'{UPDATE_STATUS}{other.order_number}/', {'status': 'accepted'}, format='json')
+        self.assertEqual(r.status_code, 400)

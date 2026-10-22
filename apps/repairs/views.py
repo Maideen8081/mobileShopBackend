@@ -3,6 +3,7 @@ import logging
 from django.db import DatabaseError
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.generics import (
     CreateAPIView,
     DestroyAPIView,
@@ -373,6 +374,9 @@ class RepairTicketCreateAPIView(CreateAPIView):
                 'success': False,
                 'message': 'Database error. Please try again.',
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except ValidationError:
+            # Field errors are the admin's to fix: return DRF's 400 with per-field messages.
+            raise
         except Exception as e:
             logger.error('[repairService] Unexpected error creating ticket: %s', e)
             return Response({

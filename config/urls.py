@@ -28,6 +28,8 @@ api_urlpatterns = [
     path('', include('apps.customers.urls')),
     path('', include('apps.orders.urls')),
     path('admin/auth/', include('apps.customers.admin_urls')),
+    path('admin/', include('apps.adminpanel.urls')),
+    path('trade-ins/', include('apps.tradeins.urls')),
 ]
 
 urlpatterns = [

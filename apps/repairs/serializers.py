@@ -1,8 +1,10 @@
 import re
+from decimal import Decimal
 
 from rest_framework import serializers
 
 from apps.common.serializers import get_absolute_image_url
+from apps.common.validators import clean_person_name, clean_required_text
 from apps.repairs.constants import FIELD_ALIASES, STATUS_LABELS
 from apps.repairs.models import (
     Notification,
@@ -104,8 +106,9 @@ class RepairBookSerializer(serializers.Serializer):
                 mutable[num_field] = re.sub(r'\D', '', str(mutable[num_field]))
 
         if 'imei_number' in mutable and mutable['imei_number']:
-            if not re.match(r'^\d{15}$', str(mutable['imei_number'])):
-                mutable['imei_number'] = ''
+            # Accept "35 209 ... " or dashed input, but never silently drop a
+            # wrong IMEI: validate_imei_number reports it to the user.
+            mutable['imei_number'] = re.sub(r'[\s-]', '', str(mutable['imei_number']))
 
         return super().to_internal_value(mutable)
 
@@ -137,7 +140,69 @@ class RepairBookSerializer(serializers.Serializer):
         return value
 
 
-class RepairTicketCreateSerializer(serializers.ModelSerializer):
+class AdminTicketValidationMixin:
+    """Field rules shared by the admin create and edit forms."""
+
+    def validate_customer_name(self, value):
+        return clean_person_name(value, 'Customer name')
+
+    def validate_alternate_number(self, value):
+        value = re.sub(r'\D', '', str(value or ''))
+        if value and not re.match(r'^\d{10,15}$', value):
+            raise serializers.ValidationError('Alternate number must be 10-15 digits.')
+        return value
+
+    def validate_email(self, value):
+        return (value or '').strip().lower()
+
+    def validate_device_brand(self, value):
+        return clean_required_text(value, 'Device brand', max_len=100)
+
+    def validate_device_model(self, value):
+        return clean_required_text(value, 'Device model', max_len=100)
+
+    def validate_imei_number(self, value):
+        if value and not re.match(r'^\d{15}$', str(value)):
+            raise serializers.ValidationError('IMEI must be exactly 15 digits.')
+        return value or ''
+
+    def validate_issue_category(self, value):
+        return clean_required_text(value, 'Issue category', max_len=50)
+
+    def validate_problem_description(self, value):
+        return clean_required_text(value, 'Problem description', min_len=10, max_len=2000)
+
+    def validate_estimated_cost(self, value):
+        if value is None:
+            return value
+        if value < 0:
+            raise serializers.ValidationError('Estimated cost cannot be negative.')
+        if value > Decimal('500000'):
+            raise serializers.ValidationError('Estimated cost looks too high (max ₹5,00,000).')
+        return value
+
+    def validate_estimated_completion_days(self, value):
+        if value is None:
+            return value
+        if value < 1 or value > 60:
+            raise serializers.ValidationError('Completion time must be between 1 and 60 days.')
+        return value
+
+    def validate_repair_charge(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError('Repair charge cannot be negative.')
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        mobile = attrs.get('mobile_number') or getattr(self.instance, 'mobile_number', '')
+        alternate = attrs.get('alternate_number')
+        if alternate and mobile and alternate == mobile:
+            raise serializers.ValidationError({'alternate_number': 'Alternate number must differ from the mobile number.'})
+        return attrs
+
+
+class RepairTicketCreateSerializer(AdminTicketValidationMixin, serializers.ModelSerializer):
     photos = serializers.ListField(
         child=serializers.ImageField(), write_only=True, required=False
     )
@@ -172,8 +237,9 @@ class RepairTicketCreateSerializer(serializers.ModelSerializer):
                 mutable[num_field] = re.sub(r'\D', '', str(mutable[num_field]))
 
         if 'imei_number' in mutable and mutable['imei_number']:
-            if not re.match(r'^\d{15}$', str(mutable['imei_number'])):
-                mutable['imei_number'] = ''
+            # Accept "35 209 ... " or dashed input, but never silently drop a
+            # wrong IMEI: validate_imei_number reports it to the user.
+            mutable['imei_number'] = re.sub(r'[\s-]', '', str(mutable['imei_number']))
 
         if photos:
             mutable['photos'] = photos
@@ -307,7 +373,7 @@ class RepairTicketDetailSerializer(serializers.ModelSerializer):
         return STATUS_LABELS.get(obj.status, obj.status)
 
 
-class RepairTicketUpdateSerializer(serializers.ModelSerializer):
+class RepairTicketUpdateSerializer(AdminTicketValidationMixin, serializers.ModelSerializer):
     photos = serializers.ListField(
         child=serializers.ImageField(), write_only=True, required=False
     )
@@ -352,8 +418,9 @@ class RepairTicketUpdateSerializer(serializers.ModelSerializer):
                 mutable[num_field] = re.sub(r'\D', '', str(mutable[num_field]))
 
         if 'imei_number' in mutable and mutable['imei_number']:
-            if not re.match(r'^\d{15}$', str(mutable['imei_number'])):
-                mutable['imei_number'] = ''
+            # Accept "35 209 ... " or dashed input, but never silently drop a
+            # wrong IMEI: validate_imei_number reports it to the user.
+            mutable['imei_number'] = re.sub(r'[\s-]', '', str(mutable['imei_number']))
 
         if photos:
             mutable['photos'] = photos
@@ -386,10 +453,27 @@ class RepairTicketUpdateSerializer(serializers.ModelSerializer):
 
 class RepairStatusUpdateSerializer(serializers.Serializer):
     status = serializers.CharField(max_length=30)
-    notes = serializers.CharField(required=False, default='')
-    updated_by = serializers.CharField(required=False, default='Admin')
-    repair_reason = serializers.CharField(required=False, default='')
+    notes = serializers.CharField(required=False, default='', allow_blank=True, max_length=2000)
+    updated_by = serializers.CharField(required=False, default='Admin', max_length=100)
+    repair_reason = serializers.CharField(required=False, default='', allow_blank=True, max_length=1000)
     repair_charge = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+
+    def validate_status(self, value):
+        value = (value or '').strip()
+        valid = {key for key, _ in RepairTicket.STATUS_CHOICES} | {'received'}
+        if value not in valid:
+            raise serializers.ValidationError('Unknown repair status.')
+        return value
+
+    def validate_repair_charge(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError('Repair charge cannot be negative.')
+        return value
+
+    def validate(self, attrs):
+        if attrs['status'] in ('rejected', 'cancelled') and not attrs.get('notes', '').strip():
+            raise serializers.ValidationError({'notes': 'Give a reason when rejecting or cancelling a repair.'})
+        return attrs
 
 
 class RepairCustomerApproveSerializer(serializers.Serializer):
@@ -399,3 +483,6 @@ class RepairCustomerApproveSerializer(serializers.Serializer):
 
 class RepairTicketTechnicianSerializer(serializers.Serializer):
     assigned_technician = serializers.CharField(max_length=100)
+
+    def validate_assigned_technician(self, value):
+        return clean_required_text(value, 'Technician name', min_len=2, max_len=100)
