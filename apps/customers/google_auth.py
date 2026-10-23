@@ -91,7 +91,36 @@ def resolve_google_user(claims):
     if not user.is_active:
         raise GoogleSignInError('This account has been disabled. Please contact support.', status_code=403)
 
+    if not created:
+        _sync_google_profile(user, claims)
     return user, created
+
+
+def _google_picture(claims):
+    """The account photo URL, if Google sent a usable https one."""
+    picture = (claims.get('picture') or '').strip()
+    return picture if picture.startswith('https://') and len(picture) <= 1024 else ''
+
+
+def _sync_google_profile(user, claims):
+    """Keep the stored Google details current without overwriting what the customer set.
+
+    The photo always follows the Google account (it changes there). Names are
+    only filled in when blank, e.g. an email/password account linked to Google
+    later, so an edited profile name is never replaced.
+    """
+    changed = []
+    picture = _google_picture(claims)
+    if picture and picture != user.avatar_url:
+        user.avatar_url = picture
+        changed.append('avatar_url')
+    for field, claim in (('first_name', 'given_name'), ('last_name', 'family_name')):
+        value = (claims.get(claim) or '').strip()[:150]
+        if value and not getattr(user, field):
+            setattr(user, field, value)
+            changed.append(field)
+    if changed:
+        user.save(update_fields=changed)
 
 
 def _create_google_user(sub, email, claims):
@@ -104,6 +133,7 @@ def _create_google_user(sub, email, claims):
                 role=User.ROLE_CUSTOMER,
                 is_verified=True,
                 google_sub=sub,
+                avatar_url=_google_picture(claims),
             )
             # No local password; the customer can set one later via password reset.
             user.set_unusable_password()

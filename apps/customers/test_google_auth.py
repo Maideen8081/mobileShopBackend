@@ -76,6 +76,37 @@ class GoogleLoginTest(TestCase):
         self.assertTrue(existing.check_password('Str0ng!Pass'))
         self.assertEqual(User.objects.count(), 1)
 
+    def test_stores_google_photo_and_refreshes_it_on_later_sign_in(self):
+        with mock.patch(VERIFY, return_value=claims(picture='https://lh3.googleusercontent.com/a/old')):
+            self.post()
+        user = User.objects.get(email='joe@gmail.com')
+        self.assertEqual(user.avatar_url, 'https://lh3.googleusercontent.com/a/old')
+
+        with mock.patch(VERIFY, return_value=claims(picture='https://lh3.googleusercontent.com/a/new')):
+            self.post()
+        user.refresh_from_db()
+        self.assertEqual(user.avatar_url, 'https://lh3.googleusercontent.com/a/new')
+
+    def test_non_https_photo_is_ignored(self):
+        with mock.patch(VERIFY, return_value=claims(picture='http://example.com/me.png')):
+            self.post()
+        self.assertEqual(User.objects.get(email='joe@gmail.com').avatar_url, '')
+
+    def test_linking_fills_blank_names_but_keeps_existing_ones(self):
+        blank = User.objects.create_user(email='joe@gmail.com', password='Str0ng!Pass')
+        with mock.patch(VERIFY, return_value=claims(picture='https://lh3.googleusercontent.com/a/x')):
+            self.post()
+        blank.refresh_from_db()
+        self.assertEqual((blank.first_name, blank.last_name), ('Joe', 'Bloggs'))
+        self.assertEqual(blank.avatar_url, 'https://lh3.googleusercontent.com/a/x')
+
+        blank.first_name = 'Joseph'
+        blank.save(update_fields=['first_name'])
+        with mock.patch(VERIFY, return_value=claims()):
+            self.post()
+        blank.refresh_from_db()
+        self.assertEqual(blank.first_name, 'Joseph')
+
     def test_invalid_token_rejected(self):
         with mock.patch(VERIFY, side_effect=ValueError('Token expired')):
             response = self.post()

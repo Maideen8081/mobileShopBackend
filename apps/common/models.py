@@ -43,6 +43,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_verified = models.BooleanField(default=False)
     # Stable Google account id ('sub' claim) once the user signs in with Google.
     google_sub = models.CharField(max_length=255, unique=True, blank=True, null=True, default=None)
+    # Profile photo URL from the Google account ('picture' claim), refreshed on each Google sign-in.
+    avatar_url = models.URLField(max_length=1024, blank=True, default='')
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     date_joined = models.DateTimeField(auto_now_add=True)

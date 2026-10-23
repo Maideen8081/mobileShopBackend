@@ -83,3 +83,37 @@ class CustomerAdminTest(AdminPanelBase):
     def test_admin_accounts_are_not_reachable(self):
         self.assertEqual(self.client.get(f'/api/v1/admin/customers/{self.admin.pk}/').status_code, 404)
         self.assertEqual(self.client.patch(f'/api/v1/admin/customers/{self.admin.pk}/', {'is_active': False}, format='json').status_code, 404)
+
+    def test_rows_show_sign_in_method_photo_and_last_login(self):
+        google_only = User.objects.create_user(
+            email='gina@gmail.com', first_name='Gina', google_sub='g-1',
+            avatar_url='https://lh3.googleusercontent.com/a/gina',
+        )
+        google_only.set_unusable_password()
+        google_only.save()
+        User.objects.create_user(email='both@gmail.com', password='Str0ng!Pass', google_sub='g-2')
+        self.client.force_authenticate(None)
+        APIClient().login(email='asha@example.com', password='Str0ng!Pass')  # sets last_login
+        self.client.force_authenticate(self.admin)
+
+        body = self.client.get('/api/v1/admin/customers/').data['data']
+        rows = {r['email']: r for r in body['results']}
+        self.assertEqual(rows['gina@gmail.com']['signInMethod'], 'google')
+        self.assertTrue(rows['gina@gmail.com']['googleLinked'])
+        self.assertEqual(rows['gina@gmail.com']['avatarUrl'], 'https://lh3.googleusercontent.com/a/gina')
+        self.assertEqual(rows['both@gmail.com']['signInMethod'], 'both')
+        self.assertEqual(rows['asha@example.com']['signInMethod'], 'password')
+        self.assertIsNone(rows['asha@example.com']['avatarUrl'])
+        self.assertIsNotNone(rows['asha@example.com']['lastLogin'])
+        self.assertEqual(body['summary']['google'], 2)
+
+        detail = self.client.get(f'/api/v1/admin/customers/{google_only.pk}/').data['data']
+        self.assertEqual(detail['signInMethod'], 'google')
+
+    def test_filter_by_sign_in_method(self):
+        User.objects.create_user(email='gina@gmail.com', google_sub='g-1')
+        url = '/api/v1/admin/customers/'
+        google = self.client.get(url, {'provider': 'google'}).data['data']
+        self.assertEqual([r['email'] for r in google['results']], ['gina@gmail.com'])
+        password = self.client.get(url, {'provider': 'password'}).data['data']
+        self.assertEqual([r['email'] for r in password['results']], ['asha@example.com'])

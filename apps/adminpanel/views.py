@@ -215,15 +215,26 @@ class DashboardAPIView(GenericAPIView):
         })
 
 
+def _sign_in_method(user):
+    """'google' (Google only), 'password' (email + password only) or 'both'."""
+    if not user.google_sub:
+        return 'password'
+    return 'both' if user.has_usable_password() else 'google'
+
+
 def _customer_row(user):
     return {
         'id': user.id,
         'name': user.get_full_name(),
         'email': user.email,
         'mobile': user.mobile_number or '',
+        'avatarUrl': user.avatar_url or None,
+        'signInMethod': _sign_in_method(user),
+        'googleLinked': bool(user.google_sub),
         'isActive': user.is_active,
         'isVerified': user.is_verified,
         'dateJoined': user.date_joined.isoformat(),
+        'lastLogin': user.last_login.isoformat() if user.last_login else None,
         'ordersCount': user.orders_count,
         'totalSpent': _money(user.total_spent),
         'repairsCount': user.repairs_count,
@@ -266,6 +277,11 @@ class CustomerListAPIView(GenericAPIView):
             qs = qs.filter(is_active=True)
         elif state == 'inactive':
             qs = qs.filter(is_active=False)
+        provider = request.query_params.get('provider', '').strip()
+        if provider == 'google':
+            qs = qs.filter(google_sub__isnull=False)
+        elif provider == 'password':
+            qs = qs.filter(google_sub__isnull=True)
 
         qs = qs.order_by(self.SORTS.get(request.query_params.get('sort', ''), '-date_joined'), '-id')
 
@@ -295,6 +311,7 @@ class CustomerListAPIView(GenericAPIView):
                         date_joined__gte=timezone.localtime().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                     ).count(),
                     'withOrders': base.filter(orders__isnull=False).distinct().count(),
+                    'google': base.filter(google_sub__isnull=False).count(),
                 },
             },
         })
