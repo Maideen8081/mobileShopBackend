@@ -7,7 +7,7 @@ from django.utils.decorators import method_decorator
 from django.utils.http import urlsafe_base64_encode
 from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.generics import GenericAPIView, ListAPIView, RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -22,6 +22,7 @@ from apps.common.security import (
     revoke_all_sessions_for_user,
 )
 
+from .google_auth import GoogleSignInError, resolve_google_user, verify_google_credential
 from .models import Address
 from .serializers import (
     AddressSerializer, AddressCreateSerializer,
@@ -92,6 +93,42 @@ class LoginAPIView(GenericAPIView):
         log_security_event(request, 'auth.login', actor=user, target_type='user', target_id=str(user.id))
 
         return Response(_envelope(True, 'Login successful.', data={'user': UserSerializer(user).data}))
+
+
+class GoogleLoginSerializer(serializers.Serializer):
+    credential = serializers.CharField(max_length=4096, trim_whitespace=True)
+
+
+class GoogleLoginAPIView(GenericAPIView):
+    """Sign in (or sign up) with a Google ID token from Google Identity Services."""
+
+    serializer_class = GoogleLoginSerializer
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            claims = verify_google_credential(serializer.validated_data['credential'])
+            user, created = resolve_google_user(claims)
+        except GoogleSignInError as exc:
+            return Response(_envelope(False, exc.message), status=exc.status_code)
+
+        reset_login_failures(user)
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+        request.session.pop('is_admin_session', None)
+        log_security_event(
+            request, 'auth.register' if created else 'auth.login', actor=user,
+            target_type='user', target_id=str(user.id), metadata={'method': 'google'},
+        )
+
+        return Response(_envelope(
+            True, 'Account created.' if created else 'Login successful.',
+            data={'user': UserSerializer(user).data, 'created': created},
+        ), status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
 class LogoutAPIView(GenericAPIView):

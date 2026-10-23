@@ -10,14 +10,16 @@ from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView,
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from apps.common.permissions import IsAdminUser, is_admin_account
 
-from .models import Product, ProductVariant, VariantImage
+from .models import Product, ProductVariant, StockNotification, VariantImage
 from .serializers import (
     ProductWriteSerializer,
     ProductListSerializer,
     ProductDetailSerializer,
+    StockNotificationSerializer,
     VariantImageSerializer,
     published_filter,
 )
@@ -366,3 +368,45 @@ class VariantImageDeleteAPIView(DestroyAPIView):
             'success': True,
             'message': 'Image deleted successfully',
         }, status=status.HTTP_200_OK)
+
+
+class StockNotificationCreateAPIView(CreateAPIView):
+    """Anyone may ask to be emailed once an out-of-stock product (or one variant) is restocked."""
+    serializer_class = StockNotificationSerializer
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'stock_notify'
+
+    def create(self, request, *args, **kwargs):
+        product = visible_products(request).filter(pk=kwargs['pk']).first()
+        if product is None:
+            return Response({'success': False, 'message': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email']
+        variant_id = serializer.validated_data.get('variant_id')
+
+        variants = product.variants.filter(is_active=True)
+        if variant_id is not None:
+            variant = variants.filter(pk=variant_id).first()
+            if variant is None:
+                return Response({'success': False, 'message': 'This variant is not available for the product.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            in_stock = variant.stock_quantity > 0
+        else:
+            variant = None
+            in_stock = variants.filter(stock_quantity__gt=0).exists()
+        if in_stock:
+            return Response({'success': False, 'message': 'Good news, this item is already in stock.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        _, created = StockNotification.objects.get_or_create(
+            product=product, variant=variant, email__iexact=email, notified_at__isnull=True,
+            defaults={'email': email},
+        )
+        return Response({
+            'success': True,
+            'message': ("We'll email you as soon as it's back in stock." if created
+                        else "You're already on the list. We'll email you when it's back."),
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

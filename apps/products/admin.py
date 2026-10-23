@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Product, ProductFeature, CareInstruction, ProductVariant, VariantImage
+from .models import Product, ProductFeature, CareInstruction, ProductVariant, VariantImage, StockNotification
 
 
 class ProductFeatureInline(admin.TabularInline):
@@ -41,3 +41,11 @@ class ProductVariantAdmin(admin.ModelAdmin):
 @admin.register(VariantImage)
 class VariantImageAdmin(admin.ModelAdmin):
     list_display = ('id', 'variant', 'is_main', 'created_at')
+
+
+@admin.register(StockNotification)
+class StockNotificationAdmin(admin.ModelAdmin):
+    list_display = ('email', 'product', 'variant', 'created_at', 'notified_at')
+    list_filter = ('notified_at',)
+    search_fields = ('email', 'product__product_name')
+    raw_id_fields = ('product', 'variant')

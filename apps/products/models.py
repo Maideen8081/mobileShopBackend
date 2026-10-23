@@ -125,3 +125,30 @@ class VariantImage(models.Model):
 
     def __str__(self):
         return f'{self.variant.variant_name} Image'
+
+
+class StockNotification(models.Model):
+    """A shopper's request to be emailed when an out-of-stock product/variant is restocked."""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='stock_notifications')
+    # Null means "any variant of this product".
+    variant = models.ForeignKey(
+        ProductVariant, on_delete=models.CASCADE, related_name='stock_notifications', null=True, blank=True,
+    )
+    email = models.EmailField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    notified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'stock_notifications'
+        ordering = ('-created_at',)
+        indexes = [models.Index(fields=['product', 'notified_at'])]
+        constraints = [
+            # One pending request per email per product/variant; once sent they may subscribe again.
+            models.UniqueConstraint(
+                Lower('email'), 'product', 'variant',
+                condition=Q(notified_at__isnull=True), name='stock_notification_pending_unique',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.email} → {self.variant or self.product}'

@@ -41,5 +41,6 @@ REST_FRAMEWORK = {
         'login': '1000/min',
         'password_reset': '1000/min',
         'register': '1000/min',
+        'stock_notify': '1000/min',
     },
 }

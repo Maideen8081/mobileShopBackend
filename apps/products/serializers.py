@@ -8,7 +8,7 @@ from rest_framework import serializers
 from apps.categories.models import SubCategory
 from apps.common.serializers import AbsoluteImageField
 from . import validators as rules
-from .models import Product, ProductFeature, CareInstruction, ProductVariant, VariantImage
+from .models import Product, ProductFeature, CareInstruction, ProductVariant, VariantImage, StockNotification
 
 
 class VariantImageSerializer(serializers.ModelSerializer):
@@ -465,3 +465,11 @@ def admin_product_queryset():
 def published_filter():
     """What shoppers may see: published products in active categories."""
     return Q(is_published=True, category__status='active')
+
+
+class StockNotificationSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=254)
+    variant_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate_email(self, value):
+        return value.strip().lower()

@@ -146,6 +146,12 @@ AUTH_USER_MODEL = 'common.User'
 # set at the database level, or their server-side role is one of these values.
 ADMIN_ROLES = {'admin', 'superadmin'}
 
+# --- Google sign-in (OpenID Connect) -----------------------------------------
+# OAuth 2.0 Web client ID from Google Cloud. Only the public client ID is needed:
+# the SPA obtains a Google-signed ID token and the API verifies it against this
+# audience. Leave empty to disable Google sign-in.
+GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID', default='')
+
 # --- Session / cookie strategy ------------------------------------------------
 # Authentication is server-managed (Django sessions). Access tokens are never
 # stored in localStorage. The session cookie is HttpOnly; the CSRF cookie must
@@ -184,6 +190,13 @@ ACCOUNT_LOCKOUT_MINUTES = config('ACCOUNT_LOCKOUT_MINUTES', default=15, cast=int
 # Password reset / email delivery.
 PASSWORD_RESET_TIMEOUT = 60 * 60 * 3                   # link valid for 3 hours
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@phoneshop.local')
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = config('EMAIL_HOST', default='localhost')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=10, cast=int)
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
 
 CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL_ORIGINS', default=True, cast=bool)
@@ -215,6 +228,7 @@ REST_FRAMEWORK = {
         'login': config('THROTTLE_LOGIN', default='10/min'),
         'password_reset': config('THROTTLE_PASSWORD_RESET', default='5/hour'),
         'register': config('THROTTLE_REGISTER', default='20/hour'),
+        'stock_notify': config('THROTTLE_STOCK_NOTIFY', default='10/hour'),
     },
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',

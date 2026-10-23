@@ -6,6 +6,7 @@ urlpatterns = [
     path('auth/csrf/', views.CSRFTokenAPIView.as_view(), name='auth-csrf'),
     path('auth/register/', views.RegisterAPIView.as_view(), name='auth-register'),
     path('auth/login/', views.LoginAPIView.as_view(), name='auth-login'),
+    path('auth/google/', views.GoogleLoginAPIView.as_view(), name='auth-google'),
     path('auth/logout/', views.LogoutAPIView.as_view(), name='auth-logout'),
     path('auth/profile/', views.UserProfileAPIView.as_view(), name='auth-profile'),
     path('auth/change-password/', views.ChangePasswordAPIView.as_view(), name='auth-change-password'),

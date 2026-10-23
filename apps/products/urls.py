@@ -9,6 +9,7 @@ urlpatterns = [
     path('dashboard-counts/', views.ProductDashboardCountsAPIView.as_view(), name='product-dashboard-counts'),
     path('<int:pk>/', views.ProductDetailAPIView.as_view(), name='product-detail'),
     path('<int:pk>/update/', views.ProductUpdateAPIView.as_view(), name='product-update'),
+    path('<int:pk>/notify/', views.StockNotificationCreateAPIView.as_view(), name='product-stock-notify'),
     path('<int:pk>/delete/', views.ProductDeleteAPIView.as_view(), name='product-delete'),
     path('<int:variant_pk>/images/upload/', views.VariantImageUploadAPIView.as_view(), name='variant-image-upload'),
     path('images/<int:pk>/delete/', views.VariantImageDeleteAPIView.as_view(), name='variant-image-delete'),
