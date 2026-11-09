@@ -40,6 +40,12 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Star must be between 1 and 5.')
         return value
 
+    def validate(self, attrs):
+        user = self.context['request'].user
+        if Review.objects.filter(user=user, product=attrs['product']).exists():
+            raise serializers.ValidationError('You have already reviewed this product.')
+        return attrs
+
     def create(self, validated_data):
         user = self.context['request'].user
         return Review.objects.create(user=user, **validated_data)
@@ -59,12 +65,11 @@ class ReviewUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Review
-        fields = ['star', 'rating', 'content', 'is_published', 'images', 'remove_image_ids']
+        fields = ['star', 'rating', 'content', 'images', 'remove_image_ids']
         extra_kwargs = {
             'star': {'required': False},
             'rating': {'required': False},
             'content': {'required': False},
-            'is_published': {'required': False},
         }
 
     def validate_star(self, value):
@@ -76,6 +81,12 @@ class ReviewUpdateSerializer(serializers.ModelSerializer):
         images_data = validated_data.pop('images', None)
         remove_image_ids = validated_data.pop('remove_image_ids', None)
 
+        # Check the image limit before changing anything, so a rejected update saves nothing.
+        if images_data:
+            removing = instance.images.filter(id__in=remove_image_ids or []).count()
+            if instance.images.count() - removing + len(images_data) > 10:
+                raise serializers.ValidationError({'images': 'Maximum 10 images allowed per review.'})
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -86,9 +97,6 @@ class ReviewUpdateSerializer(serializers.ModelSerializer):
                 img.delete()
 
         if images_data:
-            existing = instance.images.count()
-            if existing + len(images_data) > 10:
-                raise serializers.ValidationError({'images': 'Maximum 10 images allowed per review.'})
             for image in images_data:
                 ReviewImage.objects.create(review=instance, image=image)
 

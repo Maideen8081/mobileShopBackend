@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from django.utils import timezone
 
 from django.conf import settings
 from django.core.mail import EmailMessage
@@ -40,7 +40,7 @@ def _create_notification(user, ticket, title, message, notification_type='email'
         title=title,
         message=message,
         notification_type=notification_type,
-        sent_at=datetime.now(),
+        sent_at=timezone.now(),
     )
     return notification
 

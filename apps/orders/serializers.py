@@ -103,14 +103,6 @@ class OrderListSerializer(serializers.ModelSerializer):
         return est.strftime('%d %b %Y')
 
 
-class CreateOrderSerializer(serializers.Serializer):
-    address_id = serializers.IntegerField()
-    coupon_code = serializers.CharField(required=False, allow_blank=True)
-    razorpay_order_id = serializers.CharField()
-    razorpay_payment_id = serializers.CharField()
-    razorpay_signature = serializers.CharField()
-
-
 class CreateRazorpayOrderSerializer(serializers.Serializer):
     coupon_code = serializers.CharField(required=False, allow_blank=True)
 
@@ -136,6 +128,12 @@ class VerifyPaymentSerializer(serializers.Serializer):
         except Exception as e:
             raise serializers.ValidationError(f'Payment verification error: {str(e)}')
         return data
+
+
+class CreateOrderSerializer(VerifyPaymentSerializer):
+    """A paid order is only accepted once Razorpay's signature checks out."""
+    address_id = serializers.IntegerField()
+    coupon_code = serializers.CharField(required=False, allow_blank=True)
 
 
 class SimpleOrderItemSerializer(serializers.Serializer):

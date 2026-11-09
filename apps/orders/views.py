@@ -2,6 +2,7 @@ from decouple import config
 from decimal import Decimal, ROUND_HALF_UP
 import razorpay
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.generics import GenericAPIView, ListAPIView, RetrieveAPIView
@@ -316,6 +317,13 @@ class CreateOrderAPIView(GenericAPIView):
         razorpay_payment_id = serializer.validated_data['razorpay_payment_id']
         razorpay_signature = serializer.validated_data['razorpay_signature']
 
+        # A verified payment can only ever produce one order.
+        if Order.objects.filter(razorpay_order_id=razorpay_order_id).exists():
+            return Response({
+                'success': False,
+                'message': 'This payment has already been used for an order.',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             cart = Cart.objects.get(user=user)
         except Cart.DoesNotExist:
@@ -324,7 +332,7 @@ class CreateOrderAPIView(GenericAPIView):
                 'message': 'Cart is empty.',
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        cart_items = cart.items.select_related('product', 'variant__images').all()
+        cart_items = cart.items.select_related('product', 'variant').all()
         if not cart_items.exists():
             return Response({
                 'success': False,
@@ -339,8 +347,14 @@ class CreateOrderAPIView(GenericAPIView):
                 'message': 'Address not found.',
             }, status=status.HTTP_404_NOT_FOUND)
 
+        # Lock the variants so two checkouts cannot both take the last unit.
+        locked = {
+            v.id: v for v in ProductVariant.objects.select_for_update().filter(
+                id__in=[item.variant_id for item in cart_items]
+            )
+        }
         for item in cart_items:
-            if item.quantity > item.variant.stock_quantity:
+            if item.quantity > locked[item.variant_id].stock_quantity:
                 return Response({
                     'success': False,
                     'message': f'Insufficient stock for {item.product.product_name}.',
@@ -355,7 +369,7 @@ class CreateOrderAPIView(GenericAPIView):
 
         if coupon_code:
             try:
-                coupon_obj = Coupon.objects.get(code__iexact=coupon_code.strip())
+                coupon_obj = Coupon.objects.select_for_update().get(code__iexact=coupon_code.strip())
                 if coupon_obj.is_valid and subtotal >= coupon_obj.minimum_amount:
                     if coupon_obj.discount_type == 'percentage':
                         coupon_discount = (coupon_obj.discount_value / 100) * subtotal
@@ -370,6 +384,22 @@ class CreateOrderAPIView(GenericAPIView):
         grand_total = subtotal + tax + shipping_charge - discount_amount
         if grand_total < 0:
             grand_total = 0
+
+        # The cart may have changed since the Razorpay order was created, so
+        # confirm the amount actually paid matches what this order costs.
+        try:
+            client = razorpay.Client(auth=(config('RAZORPAY_KEY_ID'), config('RAZORPAY_SECRET')))
+            paid_paise = int(client.order.fetch(razorpay_order_id)['amount'])
+        except Exception:
+            return Response({
+                'success': False,
+                'message': 'Could not confirm the payment with Razorpay.',
+            }, status=status.HTTP_502_BAD_GATEWAY)
+        if paid_paise != int(grand_total * 100):
+            return Response({
+                'success': False,
+                'message': 'Payment amount does not match the order total.',
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         order = Order.objects.create(
             user=user,
@@ -426,12 +456,12 @@ class CreateOrderAPIView(GenericAPIView):
                 total_price=cart_item.total_price,
             )
 
-            variant = cart_item.variant
+            variant = locked[cart_item.variant_id]
             variant.stock_quantity -= cart_item.quantity
-            variant.save()
+            variant.save(update_fields=['stock_quantity'])
 
         if coupon_obj:
-            Coupon.objects.filter(id=coupon_obj.id).update(used_count=coupon_obj.used_count + 1)
+            Coupon.objects.filter(id=coupon_obj.id).update(used_count=F('used_count') + 1)
 
         cart.items.all().delete()
         cart.delete()
@@ -586,7 +616,8 @@ class SimpleCreateOrderAPIView(GenericAPIView):
         coupon_code = data.get('coupon_code', '')
         coupon_obj = None
         if coupon_code:
-            coupon_obj = Coupon.objects.filter(code__iexact=coupon_code.strip()).first()
+            # Locked so concurrent orders cannot push a coupon past max_uses.
+            coupon_obj = Coupon.objects.select_for_update().filter(code__iexact=coupon_code.strip()).first()
             if coupon_obj and coupon_obj.is_valid and subtotal >= coupon_obj.minimum_amount:
                 if coupon_obj.discount_type == 'percentage':
                     coupon_discount = coupon_obj.discount_value / 100 * subtotal
@@ -635,7 +666,7 @@ class SimpleCreateOrderAPIView(GenericAPIView):
             )
 
         if coupon_obj:
-            Coupon.objects.filter(id=coupon_obj.id).update(used_count=coupon_obj.used_count + 1)
+            Coupon.objects.filter(id=coupon_obj.id).update(used_count=F('used_count') + 1)
 
         order_serializer = SimpleOrderSerializer(order)
         return Response({

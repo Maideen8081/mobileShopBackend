@@ -11,6 +11,8 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
+from apps.common.permissions import is_admin_account
+
 from .models import Review, ReviewImage
 from .serializers import (
     ReviewSerializer,
@@ -34,7 +36,8 @@ class ReviewListAPIView(ListAPIView):
             qs = qs.filter(product_id=product)
         if star:
             qs = qs.filter(star=star)
-        if is_published is not None:
+        # Hidden (moderated) reviews are only visible to administrators.
+        if is_published is not None and is_admin_account(self.request.user):
             qs = qs.filter(is_published=is_published.lower() == 'true')
         else:
             qs = qs.filter(is_published=True)
@@ -73,9 +76,14 @@ class ReviewCreateAPIView(CreateAPIView):
 
 
 class ReviewDetailAPIView(RetrieveAPIView):
-    queryset = Review.objects.select_related('user', 'product').prefetch_related('images')
     serializer_class = ReviewSerializer
     permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        qs = Review.objects.select_related('user', 'product').prefetch_related('images')
+        if is_admin_account(self.request.user):
+            return qs
+        return qs.filter(is_published=True)
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()

@@ -78,19 +78,19 @@ class RepairBookSerializer(serializers.Serializer):
     service_id = serializers.IntegerField(required=False, allow_null=True)
     customer_name = serializers.CharField(max_length=100)
     mobile_number = serializers.CharField(max_length=15)
-    alternate_number = serializers.CharField(max_length=15, required=False, default='')
+    alternate_number = serializers.CharField(max_length=15, required=False, default='', allow_blank=True)
     email = serializers.EmailField(required=True)
-    address = serializers.CharField(required=False, default='')
+    address = serializers.CharField(required=False, default='', allow_blank=True)
     device_brand = serializers.CharField(max_length=100)
     device_model = serializers.CharField(max_length=100)
-    imei_number = serializers.CharField(max_length=15, required=False, default='')
-    serial_number = serializers.CharField(max_length=100, required=False, default='')
-    device_color = serializers.CharField(max_length=50, required=False, default='')
+    imei_number = serializers.CharField(max_length=15, required=False, default='', allow_blank=True)
+    serial_number = serializers.CharField(max_length=100, required=False, default='', allow_blank=True)
+    device_color = serializers.CharField(max_length=50, required=False, default='', allow_blank=True)
     warranty_status = serializers.CharField(max_length=20, required=False, default='unknown')
     issue_category = serializers.CharField(max_length=50)
     problem_description = serializers.CharField()
-    courier_company = serializers.CharField(max_length=100, required=False, default='')
-    courier_tracking_number = serializers.CharField(max_length=100, required=False, default='')
+    courier_company = serializers.CharField(max_length=100, required=False, default='', allow_blank=True)
+    courier_tracking_number = serializers.CharField(max_length=100, required=False, default='', allow_blank=True)
     courier_pickup_date = serializers.DateField(required=False, allow_null=True)
     courier_expected_delivery_date = serializers.DateField(required=False, allow_null=True)
 
@@ -136,7 +136,7 @@ class RepairBookSerializer(serializers.Serializer):
 
     def validate_imei_number(self, value):
         if value and not re.match(r'^\d{15}$', str(value)):
-            return ''
+            raise serializers.ValidationError('IMEI must be exactly 15 digits.')
         return value
 
 
@@ -478,7 +478,7 @@ class RepairStatusUpdateSerializer(serializers.Serializer):
 
 class RepairCustomerApproveSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['approve', 'decline'])
-    notes = serializers.CharField(required=False, default='')
+    notes = serializers.CharField(required=False, default='', allow_blank=True)
 
 
 class RepairTicketTechnicianSerializer(serializers.Serializer):
