@@ -1,8 +1,24 @@
-from .base import *
+import os
+
+os.environ.setdefault('DB_NAME', 'db.sqlite3')
+os.environ.setdefault('DB_USER', '')
+os.environ.setdefault('DB_PASSWORD', '')
+os.environ.setdefault('DB_HOST', '')
+os.environ.setdefault('DB_PORT', '5432')
+os.environ.setdefault('SECRET_KEY', 'django-insecure-local-dev-only')
+
+from .base import *  # noqa: E402,F401,F403
 
 DEBUG = True
 ALLOWED_HOSTS = ['*']
 CORS_ALLOW_ALL_ORIGINS = True
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
 
 # Local dev is served over plain HTTP on localhost, so cookies cannot be
 # marked Secure and must use SameSite=Lax (frontend at http://localhost:5173
