@@ -1,17 +1,35 @@
+import re
+
 from rest_framework import serializers
 
+from apps.common.serializers import AbsoluteImageField
 from apps.common.validators import (
     clean_amount, clean_indian_mobile, clean_person_name, clean_required_text,
 )
 
-from .models import TradeIn
+from .models import TradeIn, TradeInPhoto
 
 STORAGE_OPTIONS = {'64GB', '128GB', '256GB', '512GB', '1TB'}
+IMEI_RE = re.compile(r'^\d{14,17}$')
+
+
+class TradeInPhotoSerializer(serializers.ModelSerializer):
+    image = AbsoluteImageField(read_only=True)
+    kind_label = serializers.CharField(source='get_kind_display', read_only=True)
+
+    class Meta:
+        model = TradeInPhoto
+        fields = ['id', 'kind', 'kind_label', 'image', 'created_at']
+        read_only_fields = fields
 
 
 class TradeInSerializer(serializers.ModelSerializer):
     trade_id = serializers.CharField(read_only=True)
     status_label = serializers.CharField(source='get_status_display', read_only=True)
+    photos = TradeInPhotoSerializer(many=True, read_only=True)
+    purchase_bill = AbsoluteImageField(read_only=True)
+    courier_slip = AbsoluteImageField(read_only=True)
+    payment_bill = AbsoluteImageField(read_only=True)
 
     class Meta:
         model = TradeIn
@@ -19,8 +37,10 @@ class TradeInSerializer(serializers.ModelSerializer):
             'id', 'trade_id', 'user',
             'customer_name', 'customer_mobile', 'customer_email',
             'device_brand', 'device_model', 'device_storage', 'device_condition',
+            'imei_number', 'photos', 'purchase_bill', 'courier_slip', 'payment_bill',
             'estimated_value', 'quoted_price', 'final_value',
             'status', 'status_label', 'admin_notes', 'rejection_reason',
+            'verified_at', 'shipped_at', 'received_at', 'paid_at',
             'payment_method', 'payment_status',
             'created_at', 'updated_at',
         ]
@@ -33,11 +53,12 @@ class TradeInCreateSerializer(serializers.ModelSerializer):
         fields = [
             'customer_name', 'customer_mobile', 'customer_email',
             'device_brand', 'device_model', 'device_storage', 'device_condition',
-            'estimated_value',
+            'imei_number', 'estimated_value',
         ]
         extra_kwargs = {
             'customer_email': {'required': False, 'allow_blank': True},
             'device_storage': {'required': False, 'allow_blank': True},
+            'imei_number': {'required': False, 'allow_blank': True},
             'estimated_value': {'required': False},
         }
 
@@ -60,6 +81,12 @@ class TradeInCreateSerializer(serializers.ModelSerializer):
         value = (value or '').strip().upper()
         if value and value not in STORAGE_OPTIONS:
             raise serializers.ValidationError(f'Storage must be one of: {", ".join(sorted(STORAGE_OPTIONS))}.')
+        return value
+
+    def validate_imei_number(self, value):
+        value = re.sub(r'[\s-]', '', value or '').upper()
+        if value and not IMEI_RE.fullmatch(value):
+            raise serializers.ValidationError('IMEI must be 14 to 17 digits.')
         return value
 
     def validate_estimated_value(self, value):
@@ -117,5 +144,19 @@ class TradeInRejectSerializer(serializers.Serializer):
 
 
 class TradeInPaySerializer(serializers.Serializer):
+    payment_method = serializers.ChoiceField(choices=TradeIn.PAYMENT_METHOD_CHOICES)
+    notes = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+
+class TradeInNoteSerializer(serializers.Serializer):
+    notes = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+
+class TradeInCourierSerializer(serializers.Serializer):
+    courier_slip = serializers.ImageField(required=False, write_only=True)
+    notes = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+
+class TradeInPaymentUploadSerializer(serializers.Serializer):
     payment_method = serializers.ChoiceField(choices=TradeIn.PAYMENT_METHOD_CHOICES)
     notes = serializers.CharField(required=False, allow_blank=True, max_length=2000)
