@@ -361,3 +361,39 @@ class VariantDatabaseConstraintTest(TestCase):
     def test_rejects_duplicate_brand_model(self):
         with self.assertRaises(IntegrityError), transaction.atomic():
             Product.objects.create(product_name='Phone 2', brand='ACME', model_number='a1', category=self.product.category)
+
+
+class PublicCatalogFilterTest(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        category = Category.objects.create(category_name='Phones', status='active')
+        for name, brand, price, discount, active in [
+            ('Discount phone', 'Acme', 200, 140, True),
+            ('Regular phone', 'Acme', 180, None, True),
+            ('Budget phone', 'Other', 100, None, True),
+            ('Inactive deal', 'Other', 100, 50, False),
+        ]:
+            product = Product.objects.create(
+                product_name=name, brand=brand, model_number=name, category=category, is_published=True,
+            )
+            ProductVariant.objects.create(
+                product=product, variant_name=name, price=price, discount_price=discount, is_active=active,
+            )
+
+    def test_deals_only_include_active_discounted_variants(self):
+        response = self.client.get(PRODUCT_LIST, {'has_discount': 'true'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([p['product_name'] for p in response.json()['data']], ['Discount phone'])
+
+    def test_brand_and_selling_price_filters_preserve_pagination(self):
+        response = self.client.get(
+            PRODUCT_LIST, {'brand': 'Acme', 'price_min': 130, 'price_max': 190, 'ordering': 'min_price', 'page_size': 1},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['count'], 2)
+        self.assertIsNotNone(data['next'])
+        self.assertEqual(data['data'][0]['product_name'], 'Discount phone')
+
+    def test_invalid_price_returns_validation_error(self):
+        self.assertEqual(self.client.get(PRODUCT_LIST, {'price_min': 'NaN'}).status_code, 400)

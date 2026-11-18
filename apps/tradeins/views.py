@@ -226,6 +226,8 @@ class TradeInStatusAPIView(_AdminTradeInView):
             trade = self.get_trade(pk, lock=True)
             if not trade:
                 return _fail('Trade-in not found.', status.HTTP_404_NOT_FOUND)
+            if new_status == TradeIn.STATUS_ACCEPTED and trade.status == TradeIn.STATUS_PENDING:
+                return _fail('Review the trade-in and set a quoted price before accepting.')
             error = self._transition(trade, new_status)
             if error:
                 return _fail(error)

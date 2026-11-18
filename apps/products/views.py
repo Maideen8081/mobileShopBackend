@@ -1,7 +1,7 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
-from django.db.models import Count, Sum, Min, Q, F, Value
+from django.db.models import Count, Exists, OuterRef, Sum, Min, Q, F, Value
 from django.db.models.functions import Coalesce, NullIf
 from drf_spectacular.utils import extend_schema
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -10,6 +10,7 @@ from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView,
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 from rest_framework.throttling import ScopedRateThrottle
 
 from apps.common.permissions import IsAdminUser, is_admin_account
@@ -50,7 +51,7 @@ class ProductListAPIView(ListAPIView):
     pagination_class = ProductPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['product_name', 'brand', 'model_number']
-    ordering_fields = ['product_name', 'created_at', 'brand']
+    ordering_fields = ['product_name', 'created_at', 'brand', 'min_price']
     ordering = ['-created_at']
 
     def get_queryset(self):
@@ -103,6 +104,28 @@ class ProductListAPIView(ListAPIView):
             qs = qs.filter(is_published=True)
         elif status_param == 'inactive':
             qs = qs.filter(is_published=False)
+
+        if self.request.query_params.get('has_discount') == 'true':
+            discounted = ProductVariant.objects.filter(
+                product_id=OuterRef('pk'), is_active=True, discount_price__gt=0, discount_price__lt=F('price'),
+            )
+            qs = qs.filter(Exists(discounted))
+
+        brands = [value.strip() for value in self.request.query_params.get('brand', '').split(',') if value.strip()]
+        if brands:
+            qs = qs.filter(brand__in=brands)
+
+        for param, lookup in [('price_min', 'min_price__gte'), ('price_max', 'min_price__lte')]:
+            raw_price = self.request.query_params.get(param)
+            if raw_price is None:
+                continue
+            try:
+                price = Decimal(raw_price)
+                if not price.is_finite() or price < 0:
+                    raise InvalidOperation
+            except InvalidOperation:
+                raise ValidationError({param: 'Enter a valid non-negative price.'})
+            qs = qs.filter(**{lookup: price})
 
         return qs
 
